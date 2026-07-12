@@ -1,6 +1,6 @@
 //! Explicit rollback package installation helpers.
 
-use crate::install::{stable_validated_package, PackageKind};
+use crate::install::{gentoo_emerge_command, stable_validated_package, PackageKind};
 use anyhow::{Context, Result};
 use std::{
     path::{Path, PathBuf},
@@ -69,12 +69,24 @@ pub fn install_pacman(path: &Path) -> Result<()> {
     run_install(&mut command).context("pacman rollback install failed")
 }
 
+pub fn install_gentoo(path: &Path) -> Result<()> {
+    let stable = stable_validated_package(path).with_context(|| {
+        format!(
+            "Failed to stabilize Gentoo rollback package {}",
+            path.display()
+        )
+    })?;
+    let mut command = gentoo_emerge_command(stable.path())?;
+    run_install(&mut command).context("emerge rollback install failed")
+}
+
 pub fn pkexec_command(current_exe: &Path, package_path: &Path) -> Command {
     let updater_binary = updater_binary_for_privileged_install(current_exe);
     let subcommand = match PackageKind::from_path(package_path) {
         PackageKind::Rpm => "install-rollback-rpm",
         PackageKind::Deb => "install-rollback-deb",
         PackageKind::Pacman => "install-rollback-pacman",
+        PackageKind::Gentoo => "install-rollback-gentoo",
     };
     let mut command = Command::new("pkexec");
     command

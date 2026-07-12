@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+name="Codex update manager"
+description="Resident unprivileged updater for Codex Desktop"
+command="/usr/bin/codex-update-manager"
+command_args="run"
+command_background="true"
+pidfile="${XDG_RUNTIME_DIR:-/tmp}/codex-update-manager.pid"
+output_log="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-update-manager/openrc.log"
+error_log="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-update-manager/openrc.log"
+
+depend() {
+    need dbus
+    after graphical-session
+}
+
+start_pre() {
+    checkpath --directory --mode 0700 "$(dirname "$pidfile")"
+    checkpath --directory --mode 0700 "$(dirname "$output_log")"
+}

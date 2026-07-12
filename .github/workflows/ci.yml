@@ -34,7 +34,14 @@ jobs:
           bash -n scripts/build-deb.sh
           bash -n scripts/build-rpm.sh
           bash -n scripts/build-pacman.sh
+          bash -n scripts/build-gentoo.sh
           bash -n scripts/build-appimage.sh
+          bash -n scripts/install-gentoo.sh
+          bash -n scripts/user-service.sh
+          bash -n packaging/linux/codex-update-manager.openrc
+          bash -n packaging/linux/codex-update-manager-openrc-user-service.sh
+          bash -n packaging/linux/codex-packaged-runtime-openrc.sh
+          bash -n packaging/linux/codex-no-updater-openrc-cleanup.sh
           bash -n scripts/ci/update-nix-hashes.sh
           bash -n scripts/ci/validate-nix-pins.sh
 
@@ -99,6 +106,43 @@ jobs:
             echo ""
             echo "- Built: \`$(basename "$deb_file")\`"
             echo "- Verified updater binary, user service, update-builder bundle, and packaged runtime helper."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  package-gentoo:
+    name: Build Gentoo GPKG
+    runs-on: ubuntu-latest
+    container: gentoo/stage3:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create minimal packaged app fixture
+        run: |
+          set -euo pipefail
+          tests/fixtures/create-packaged-app-fixture.sh /tmp/codex-app-fixture
+
+      - name: Build and inspect Portage binary package
+        run: |
+          set -euo pipefail
+          PACKAGE_WITH_UPDATER=0 \
+          PACKAGE_VERSION="$CI_PACKAGE_VERSION" \
+          APP_DIR_OVERRIDE=/tmp/codex-app-fixture \
+          DIST_DIR_OVERRIDE=/tmp/codex-dist \
+            ./scripts/build-gentoo.sh
+          pkg="$(find /tmp/codex-dist -maxdepth 1 -type f -name '*.gpkg.tar' -print -quit)"
+          test -n "$pkg"
+          inspect="$(mktemp -d)"
+          mkdir -p "$inspect/app-misc"
+          cp "$pkg" "$inspect/app-misc/$(basename "$pkg")"
+          PKGDIR="$inspect" BINPKG_FORMAT=gpkg emaint binhost --fix
+          grep -q '^CPV: app-misc/codex-desktop-' "$inspect/Packages"
+          CODEX_GENTOO_INSTALL_DRY_RUN=1 ./scripts/install-gentoo.sh "$pkg" \
+            | grep -q 'emerge --usepkgonly --oneshot =app-misc/codex-desktop-'
+          tar -tf "$pkg" | grep -q '/image.tar.zst$'
+          {
+            echo "## Gentoo Package Validation"
+            echo ""
+            echo "- Built and indexed Portage GPKG: \`$(basename "$pkg")\`"
+            echo "- Verified canonical CPV metadata and GPKG image payload."
           } >> "$GITHUB_STEP_SUMMARY"
 
   nix:

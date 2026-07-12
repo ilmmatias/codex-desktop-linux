@@ -50,7 +50,7 @@ const REQUIRED_BUNDLE_FILES: [(&str, &str); 20] = [
     ("assets/codex-linux.png", "assets/codex-linux.png"),
     ("linux-features", "linux-features"),
 ];
-const OPTIONAL_BUNDLE_FILES: [(&str, &str); 5] = [
+const OPTIONAL_BUNDLE_FILES: [(&str, &str); 6] = [
     ("CHANGELOG.md", "CHANGELOG.md"),
     (
         ".codex-linux/source-info.json",
@@ -58,6 +58,7 @@ const OPTIONAL_BUNDLE_FILES: [(&str, &str); 5] = [
     ),
     ("scripts/build-rpm.sh", "scripts/build-rpm.sh"),
     ("scripts/build-pacman.sh", "scripts/build-pacman.sh"),
+    ("scripts/build-gentoo.sh", "scripts/build-gentoo.sh"),
     (
         "scripts/rebuild-candidate.sh",
         "scripts/rebuild-candidate.sh",
@@ -161,12 +162,6 @@ pub async fn build_update_from(
             .env("APP_DIR_OVERRIDE", &workspace.app_dir)
             .env("DIST_DIR_OVERRIDE", &workspace.dist_dir)
             .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
-            .env(
-                "UPDATER_SERVICE_SOURCE",
-                workspace
-                    .bundle_dir
-                    .join("packaging/linux/codex-update-manager.service"),
-            )
             .env("PATH", &build_path)
             .current_dir(&workspace.bundle_dir),
         &workspace.build_log,
@@ -241,6 +236,7 @@ fn package_build_script(bundle_dir: &Path) -> PathBuf {
         PackageKind::Rpm => bundle_dir.join("scripts/build-rpm.sh"),
         PackageKind::Pacman => bundle_dir.join("scripts/build-pacman.sh"),
         PackageKind::Deb => bundle_dir.join("scripts/build-deb.sh"),
+        PackageKind::Gentoo => bundle_dir.join("scripts/build-gentoo.sh"),
     }
 }
 
@@ -390,7 +386,7 @@ fn find_package_in(dist_dir: &Path) -> Result<PathBuf> {
     }
 
     anyhow::bail!(
-        "No native package (.deb, .rpm, or .pkg.tar.*) found in {}",
+        "No native package (.deb, .rpm, .pkg.tar.*, or .gpkg.tar) found in {}",
         dist_dir.display()
     )
 }
@@ -403,6 +399,7 @@ fn is_native_package_file(path: &Path) -> bool {
         .to_ascii_lowercase();
     name.ends_with(".deb")
         || name.ends_with(".rpm")
+        || name.ends_with(".gpkg.tar")
         || PACMAN_PACKAGE_SUFFIXES
             .iter()
             .any(|suffix| name.ends_with(suffix))
@@ -537,6 +534,7 @@ mod tests {
         Deb,
         Rpm,
         Pacman,
+        Gentoo,
     }
 
     const FRESH_PATCH_BUNDLE_FILES: &[&str] = &[
@@ -586,6 +584,12 @@ touch "${DIST_DIR_OVERRIDE}/codex-desktop-${PACKAGE_VERSION}.x86_64.rpm"
 VER="${PACKAGE_VERSION%%+*}"
 mkdir -p "${DIST_DIR_OVERRIDE}"
 touch "${DIST_DIR_OVERRIDE}/codex-desktop-${VER}-1-x86_64.pkg.tar.zst"
+"#
+            }
+            FakePackageOutput::Gentoo => {
+                r#"set -euo pipefail
+mkdir -p "${DIST_DIR_OVERRIDE}"
+touch "${DIST_DIR_OVERRIDE}/codex-desktop-${PACKAGE_VERSION%%+*}.gpkg.tar"
 "#
             }
         };
@@ -813,6 +817,10 @@ fi
         write_fake_build_script(
             &bundle_root.join("scripts/build-pacman.sh"),
             FakePackageOutput::Pacman,
+        )?;
+        write_fake_build_script(
+            &bundle_root.join("scripts/build-gentoo.sh"),
+            FakePackageOutput::Gentoo,
         )?;
         fs::write(
             bundle_root.join("scripts/rebuild-candidate.sh"),
@@ -1076,7 +1084,7 @@ fi
         let error = find_package_in(temp.path()).expect_err("package discovery should fail");
         assert!(error
             .to_string()
-            .contains("No native package (.deb, .rpm, or .pkg.tar.*)"));
+            .contains("No native package (.deb, .rpm, .pkg.tar.*, or .gpkg.tar)"));
         Ok(())
     }
 
@@ -1090,6 +1098,15 @@ fi
 
         let found = find_package_in(temp.path())?;
         assert_eq!(found, pkg_path);
+        Ok(())
+    }
+
+    #[test]
+    fn finds_gentoo_gpkg_in_dist_dir() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let package = temp.path().join("codex-desktop-2026.07.12-amd64.gpkg.tar");
+        fs::write(&package, b"gpkg")?;
+        assert_eq!(find_package_in(temp.path())?, package);
         Ok(())
     }
 

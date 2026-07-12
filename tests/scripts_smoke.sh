@@ -637,6 +637,10 @@ SCRIPT
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/lib/linux-features.sh"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/lib/notification-actions.sh"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/lib/linux-target-context.js"
+    assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/build-gentoo.sh"
+    assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/packaging/linux/codex-desktop.ebuild.template"
+    assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/packaging/linux/codex-update-manager.openrc"
+    assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/packaging/linux/codex-update-manager-openrc-user-service.sh"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/patches/descriptor.js"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/patches/engine.js"
     assert_file_exists "$pkg_root/opt/codex-desktop/update-builder/scripts/patches/runner.js"
@@ -3046,6 +3050,51 @@ SCRIPT
     assert_contains "$helper_output" "manager=unknown"
     assert_contains "$helper_output" "format=rpm"
     assert_contains "$helper_output" "atomic=no"
+}
+
+test_gentoo_target_detection() {
+    info "Checking Gentoo emerge and GPKG target detection"
+    local workspace="$TMP_DIR/gentoo-target"
+    local fake_bin="$workspace/bin"
+    local os_release="$workspace/os-release"
+    local output="$workspace/output"
+    mkdir -p "$fake_bin"
+    printf '%s\n' "#!$BASH_BIN" 'exit 0' > "$fake_bin/emerge"
+    chmod +x "$fake_bin/emerge"
+    printf '%s\n' 'ID=gentoo' 'NAME="Gentoo"' > "$os_release"
+
+    PATH="$fake_bin:$HOST_TOOL_PATH" OS_RELEASE_FILE="$os_release" \
+        "$BASH_BIN" -c '
+            source "$1"
+            printf "manager=%s\nformat=%s\n" "$(detect_package_manager)" "$(detect_package_format)"
+        ' _ "$REPO_DIR/scripts/lib/linux-target-detect.sh" > "$output"
+    assert_contains "$output" "manager=emerge"
+    assert_contains "$output" "format=gentoo"
+
+    PATH="$fake_bin:$HOST_TOOL_PATH" OS_RELEASE_FILE="$os_release" DETECT_ONLY=1 \
+        "$BASH_BIN" "$REPO_DIR/scripts/install-deps.sh" > "$output"
+    assert_contains "$output" "Detected dependency profile: emerge"
+}
+
+test_openrc_inactive_user_cleanup() {
+    info "Checking OpenRC inactive-user enablement cleanup"
+    local workspace="$TMP_DIR/openrc-inactive-cleanup"
+    local fake_bin="$workspace/bin"
+    local home_dir="$workspace/home"
+    local service_name="codex-update-manager-smoke"
+    mkdir -p "$fake_bin" "$home_dir/.config/rc/runlevels/default"
+    ln -s "/etc/user/init.d/$service_name" \
+        "$home_dir/.config/rc/runlevels/default/$service_name"
+    printf '%s\n' "#!$BASH_BIN" "printf '%s\\n' 'fixture:x:4242:4242::${home_dir}:/bin/sh'" > "$fake_bin/getent"
+    chmod +x "$fake_bin/getent"
+
+    PATH="$fake_bin:$HOST_TOOL_PATH" SERVICE_NAME="$service_name" \
+        "$BASH_BIN" -c '
+            source "$1"
+            codex_remove_inactive_openrc_enablement
+        ' _ "$REPO_DIR/packaging/linux/codex-update-manager-openrc-user-service.sh"
+    [ ! -e "$home_dir/.config/rc/runlevels/default/$service_name" ] \
+        || fail "Expected stale OpenRC user runlevel link to be removed"
 }
 
 test_setup_native_wizard_noninteractive_feature_writer() {
@@ -9336,6 +9385,8 @@ main() {
     test_native_sudo_alert_wiring
     test_fedora_dependency_bootstrap_installs_rpmbuild
     test_fedora_atomic_rpm_ostree_target_detection
+    test_gentoo_target_detection
+    test_openrc_inactive_user_cleanup
     test_setup_native_wizard_noninteractive_feature_writer
     test_setup_native_wizard_rejects_invalid_feature_ids
     test_setup_native_wizard_rejects_features_without_readme

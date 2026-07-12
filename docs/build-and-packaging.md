@@ -22,7 +22,7 @@ Bootstrap dependencies:
 bash scripts/install-deps.sh
 ```
 
-It detects `apt`, `dnf5`, `dnf`, `pacman`, or `zypper`, installs system
+It detects `apt`, `dnf5`, `dnf`, `pacman`, `zypper`, or Gentoo `emerge`, installs system
 packages, and bootstraps Rust through `rustup` when needed.
 
 ## Manual Dependencies
@@ -41,6 +41,10 @@ sudo zypper install -t pattern devel_basis
 
 # Arch / Manjaro
 sudo pacman -S --needed python p7zip curl unzip tar zstd base-devel
+
+# Gentoo
+sudo emerge --noreplace dev-lang/nodejs dev-lang/python app-arch/7zip \
+  app-arch/unzip net-misc/curl sys-devel/gcc dev-build/make sys-apps/portage
 
 # Rust toolchain
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -150,6 +154,7 @@ After `make build-app` or `make build-app-fresh`, build a package from
 | Debian | `make deb` | `dist/codex-desktop_*.deb` | `sudo dpkg -i dist/codex-desktop_*.deb` |
 | RPM | `make rpm` | `dist/codex-desktop-*.x86_64.rpm` | `sudo dnf install dist/codex-desktop-*.rpm` or `sudo zypper install dist/codex-desktop-*.rpm` |
 | Arch | `make pacman` | `dist/codex-desktop-*.pkg.tar.zst` | `sudo pacman -U dist/codex-desktop-*.pkg.tar.zst` |
+| Gentoo | `make gentoo` | `dist/codex-desktop-*.gpkg.tar` | `./scripts/install-gentoo.sh dist/codex-desktop-*.gpkg.tar` |
 | AppImage | `make appimage` | `dist/codex-desktop-*.AppImage` | Run directly |
 | Auto-detect | `make package && make install` | matches host distro | handled by `make install` |
 
@@ -161,6 +166,22 @@ PACKAGE_VERSION=2026.03.24.220723+88f07cd3 make deb
 
 The packaging scripts only repackage what is already in `codex-app/`; they do
 not download or extract the DMG.
+
+### Gentoo GPKG workflow
+
+The Gentoo builder creates a temporary `codex-local` repository with an
+`app-misc/codex-desktop` ebuild, stages the application as an ebuild auxiliary
+payload, and asks Portage to emit its current GPKG binary-package format. The
+temporary repository and build tree are removed after the `.gpkg.tar` is copied
+to `dist/`; no `/etc/portage` overlay or binhost configuration is required.
+Portage 3.0.36 or newer is required. Supported keywords are `~amd64` and
+`~arm64`, matching the Electron and managed-runtime architectures built by this
+project.
+
+`make install` passes the GPKG path to `emerge --usepkgonly --oneshot`, so
+dependency solving and package ownership remain Portage-native. Removal uses
+the normal `sudo emerge --unmerge app-misc/codex-desktop` flow. The ebuild
+updates desktop and icon caches in post-install/post-remove hooks.
 
 ## AppImage Local Self-Build
 

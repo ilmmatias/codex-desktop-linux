@@ -48,6 +48,7 @@ cd codex-desktop-linux
 | Fedora | `make bootstrap-native` | Builds and installs an `.rpm` |
 | openSUSE | `make bootstrap-native` | Builds and installs an `.rpm` |
 | Arch, Manjaro, EndeavourOS | `make bootstrap-native` | Builds and installs a pacman package |
+| Gentoo (OpenRC 0.62+) | `make bootstrap-native` | Builds and installs a Portage `.gpkg.tar` |
 | NixOS / Nix | `nix run github:ilysenko/codex-desktop-linux` | See [Nix docs](docs/nix.md) |
 | Atomic desktops / other distros | `make build-app && make appimage` | Local self-build; no bundled updater |
 
@@ -105,6 +106,9 @@ sudo zypper remove codex-desktop
 
 # Arch / Manjaro
 sudo pacman -R codex-desktop
+
+# Gentoo
+sudo emerge --unmerge app-misc/codex-desktop
 ```
 
 Native package removal stops and disables `codex-update-manager.service` when
@@ -267,7 +271,8 @@ Full contract: [linux-features/README.md](linux-features/README.md) and
 
 ## Updates
 
-Default native packages install `codex-update-manager`, a `systemd --user`
+Default native packages install `codex-update-manager`, a per-user service
+(`systemd --user` on Debian/RPM/pacman and OpenRC user services on Gentoo)
 service that checks for newer upstream DMGs, rebuilds a local native package,
 and installs it after ChatGPT Desktop exits. The final install uses `pkexec`.
 Minimal window-manager sessions need a graphical polkit authentication agent
@@ -325,6 +330,7 @@ Build a specific artifact:
 make deb
 make rpm
 make pacman
+make gentoo
 make appimage
 ```
 

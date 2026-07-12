@@ -28,45 +28,12 @@ DEV_APP_BIN ?= $(CURDIR)/bin/$(DEV_APP_ID)
 DEB_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)_*.deb
 RPM_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-*.rpm
 PACMAN_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-[0-9]*.pkg.tar.*
+GENTOO_GLOB := $(CURDIR)/dist/$(PACKAGE_NAME)-[0-9]*.gpkg.tar
 .DEFAULT_GOAL := help
 
-NATIVE_PKG_FORMAT_CMD = format=""; \
-os_release_token_match() { \
-	local expected token; \
-	for token in $${ID:-} $${ID_LIKE:-}; do \
-		for expected in "$$@"; do \
-			if [ "$$token" = "$$expected" ]; then \
-				return 0; \
-			fi; \
-		done; \
-	done; \
-	return 1; \
-}; \
-if [ -r /etc/os-release ]; then . /etc/os-release; \
-	if os_release_token_match arch archlinux manjaro endeavouros artix; then \
-		format="pacman"; \
-	elif os_release_token_match fedora rhel centos rocky almalinux ol sles suse opensuse; then \
-		format="rpm"; \
-	elif os_release_token_match debian ubuntu linuxmint pop elementary zorin; then \
-		format="deb"; \
-	fi; \
-fi; \
-if [ -z "$$format" ]; then \
-	if command -v pacman >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
-		format="pacman"; \
-	elif command -v rpmbuild >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then \
-		format="rpm"; \
-	elif command -v dpkg-deb >/dev/null 2>&1; then \
-		format="deb"; \
-	elif command -v rpmbuild >/dev/null 2>&1; then \
-		format="rpm"; \
-	elif command -v pacman >/dev/null 2>&1; then \
-		format="pacman"; \
-	fi; \
-fi; \
-printf '%s\n' "$$format"
+NATIVE_PKG_FORMAT_CMD = source "$(CURDIR)/scripts/lib/linux-target-detect.sh"; detect_package_format
 
-.PHONY: help check test build-updater maybe-build-updater update rebuild rebuild-install inspect-upstream inspect-upstream-intel inspect-upstream-intel-devcontainer build-app build-app-fresh setup-native bootstrap-native install-native update-native rebuild-next run-app build-dev-app run-dev-app deb rpm pacman appimage package install service-enable service-status clean-dist clean-state
+.PHONY: help check test build-updater maybe-build-updater update rebuild rebuild-install inspect-upstream inspect-upstream-intel inspect-upstream-intel-devcontainer build-app build-app-fresh setup-native bootstrap-native install-native update-native rebuild-next run-app build-dev-app run-dev-app deb rpm pacman gentoo appimage package install service-enable service-status clean-dist clean-state
 
 help:
 	@printf '\nChatGPT Desktop for Linux Make Targets\n\n'
@@ -92,8 +59,9 @@ help:
 	@printf '  %-18s %s\n' "make deb" "Build the Debian package into dist/"
 	@printf '  %-18s %s\n' "make rpm" "Build the RPM package into dist/ (Fedora/openSUSE)"
 	@printf '  %-18s %s\n' "make pacman" "Build the pacman package into dist/ (Arch)"
+	@printf '  %-18s %s\n' "make gentoo" "Build the Portage GPKG into dist/ (Gentoo)"
 	@printf '  %-18s %s\n' "make appimage" "Build the AppImage into dist/ (local self-build)"
-	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, or pacman)"
+	@printf '  %-18s %s\n' "make package" "Build native package (auto-detects deb, rpm, pacman, or Gentoo)"
 	@printf '  %-18s %s\n' "make install" "Install the latest generated native package"
 	@printf '  %-18s %s\n' "make service-enable" "Enable and start codex-update-manager.service for the current user"
 	@printf '  %-18s %s\n' "make service-status" "Show codex-update-manager.service status for the current user"
@@ -109,7 +77,7 @@ help:
 	@printf '  %-18s %s\n' "REBUILD_REPORT_DIR=..." "Override inspect/rebuild report output directory"
 	@printf '  %-18s %s\n' "DEV_APP_ID=..." "Override side-by-side test app id/bin (default: codex-cua-lab)"
 	@printf '  %-18s %s\n' "DEV_APP_NAME=..." "Override side-by-side test app display name"
-	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for make deb / make rpm / make pacman / make appimage"
+	@printf '  %-18s %s\n' "PACKAGE_VERSION=..." "Override the package version for native packages or AppImage"
 	@printf '  %-18s %s\n' "PACKAGE_WITH_UPDATER=0" "Build packages without codex-update-manager or the updater service"
 	@printf '  %-18s %s\n' "CODEX_CLI_BUNDLE_SOURCE=..." "Embed an installed Codex CLI package in a local AppImage"
 	@printf '  %-18s %s\n' "MAX_BUILD_THREADS=8" "Set supported build jobs/compression threads (default: 0, tool/user defaults)"
@@ -119,6 +87,7 @@ help:
 	@printf '  %-18s %s\n' "DEB=/path/file.deb" "Override the .deb used by make install"
 	@printf '  %-18s %s\n' "RPM=/path/file.rpm" "Override the .rpm used by make install"
 	@printf '  %-18s %s\n' "PKG=/path/file.pkg.tar.zst" "Override the pacman package used by make install"
+	@printf '  %-18s %s\n' "GENTOO=/path/file.gpkg.tar" "Override the Gentoo package used by make install"
 	@printf '\nExamples:\n\n'
 	@printf '  %s\n' "make update"
 	@printf '  %s\n' "make rebuild-install"
@@ -285,6 +254,10 @@ pacman: maybe-build-updater
 	@echo "[make] Building pacman package"
 	MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-pacman.sh
 
+gentoo: maybe-build-updater
+	@echo "[make] Building Gentoo Portage GPKG"
+	MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-gentoo.sh
+
 appimage:
 	@echo "[make] Building AppImage"
 	MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" CODEX_CLI_BUNDLE_SOURCE="$(CODEX_CLI_BUNDLE_SOURCE)" ./scripts/build-appimage.sh
@@ -298,8 +271,10 @@ package: maybe-build-updater
 		MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" RPM_BINARY_PAYLOAD="$(RPM_BINARY_PAYLOAD)" ./scripts/build-rpm.sh; \
 	elif [ "$$format" = "deb" ]; then \
 		MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-deb.sh; \
+	elif [ "$$format" = "gentoo" ]; then \
+		MAX_BUILD_THREADS="$(MAX_BUILD_THREADS)" PACKAGE_VERSION="$(or $(PACKAGE_VERSION),)" PACKAGE_WITH_UPDATER="$(PACKAGE_WITH_UPDATER)" ./scripts/build-gentoo.sh; \
 	else \
-		echo "[make] No supported packaging tool found. Install dpkg-dev (Debian), rpm-build (Fedora), or pacman (Arch)." >&2; \
+		echo "[make] No supported packaging tool found. Install dpkg-dev, rpm-build, pacman, or Portage." >&2; \
 		exit 1; \
 	fi
 
@@ -313,7 +288,14 @@ install:
 		printf '%s\n' "$$matches" | sort -V | tail -n 1; \
 	}; \
 	format="$$( $(NATIVE_PKG_FORMAT_CMD) )"; \
-	if [ "$$format" = "pacman" ]; then \
+	if [ "$$format" = "gentoo" ]; then \
+		pkg="$${GENTOO:-$$(latest_matching_file "$(GENTOO_GLOB)")}"; \
+		if [ -z "$$pkg" ]; then \
+			echo "[make] No Gentoo package found. Run 'make gentoo' first." >&2; exit 1; \
+		fi; \
+		echo "[make] Installing $$pkg"; \
+		"$(CURDIR)/scripts/install-gentoo.sh" "$$pkg"; \
+	elif [ "$$format" = "pacman" ]; then \
 		pkg="$${PKG:-$$(latest_matching_file "$(PACMAN_GLOB)")}"; \
 		if [ -z "$$pkg" ]; then \
 			echo "[make] No pacman package found. Run 'make pacman' first." >&2; exit 1; \
@@ -354,12 +336,11 @@ install:
 
 service-enable:
 	@echo "[make] Enabling and starting codex-update-manager.service"
-	systemctl --user daemon-reload
-	systemctl --user enable --now codex-update-manager.service
+	"$(CURDIR)/scripts/user-service.sh" enable
 
 service-status:
 	@echo "[make] Showing codex-update-manager.service status"
-	systemctl --user status codex-update-manager.service --no-pager
+	"$(CURDIR)/scripts/user-service.sh" status
 
 clean-dist:
 	@echo "[make] Removing dist/"

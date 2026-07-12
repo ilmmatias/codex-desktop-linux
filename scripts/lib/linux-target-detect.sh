@@ -52,6 +52,18 @@ os_release_version_major() {
     esac
 }
 
+load_linux_target_os_release() {
+    if [ -z "${OS_RELEASE_ID+x}" ]; then
+        OS_RELEASE_ID="$(os_release_field ID 2>/dev/null || true)"
+    fi
+    if [ -z "${OS_RELEASE_ID_LIKE+x}" ]; then
+        OS_RELEASE_ID_LIKE="$(os_release_field ID_LIKE 2>/dev/null || true)"
+    fi
+    if [ -z "${OS_RELEASE_VERSION_ID+x}" ]; then
+        OS_RELEASE_VERSION_ID="$(os_release_field VERSION_ID 2>/dev/null || true)"
+    fi
+}
+
 linux_target_is_atomic() {
     local override="${CODEX_LINUX_TARGET_ATOMIC:-}"
     override="${override,,}"
@@ -73,6 +85,7 @@ linux_target_is_atomic() {
 }
 
 detect_package_manager() {
+    load_linux_target_os_release
     if os_release_matches debian ubuntu linuxmint pop elementary zorin && command -v apt-get >/dev/null 2>&1; then
         echo "apt"
     elif os_release_matches arch archlinux manjaro endeavouros artix && command -v pacman >/dev/null 2>&1; then
@@ -93,6 +106,8 @@ detect_package_manager() {
         else
             echo "unknown"
         fi
+    elif os_release_matches gentoo && command -v emerge >/dev/null 2>&1; then
+        echo "emerge"
     elif command -v apt-get >/dev/null 2>&1; then
         echo "apt"
     elif command -v dnf5 >/dev/null 2>&1; then
@@ -103,18 +118,23 @@ detect_package_manager() {
         echo "pacman"
     elif command -v zypper >/dev/null 2>&1; then
         echo "zypper"
+    elif command -v emerge >/dev/null 2>&1; then
+        echo "emerge"
     else
         echo "unknown"
     fi
 }
 
 detect_package_format() {
+    load_linux_target_os_release
     if os_release_matches arch archlinux manjaro endeavouros artix; then
         echo "pacman"
     elif os_release_matches fedora rhel centos rocky almalinux ol sles suse opensuse; then
         echo "rpm"
     elif os_release_matches debian ubuntu linuxmint pop elementary zorin; then
         echo "deb"
+    elif os_release_matches gentoo; then
+        echo "gentoo"
     elif command -v pacman >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then
         echo "pacman"
     elif command -v rpmbuild >/dev/null 2>&1 && ! command -v dpkg-deb >/dev/null 2>&1; then
@@ -125,6 +145,8 @@ detect_package_format() {
         echo "rpm"
     elif command -v pacman >/dev/null 2>&1; then
         echo "pacman"
+    elif command -v emerge >/dev/null 2>&1; then
+        echo "gentoo"
     else
         echo "unknown"
     fi

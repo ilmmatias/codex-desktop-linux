@@ -18,6 +18,12 @@ validates the cached upstream `Codex.dmg` and downloads it only when missing or
 stale, builds the matching native package, and installs the newest artifact
 from `dist/`.
 
+On Gentoo, native auto-detection selects `emerge` and builds a Portage GPKG.
+The default updater-enabled package requires OpenRC 0.62 or newer so it can use
+OpenRC's per-user service support. Use `PACKAGE_WITH_UPDATER=0 make
+bootstrap-native` on older OpenRC installations; the application remains a
+normal Portage-owned package and updates are then manual.
+
 If dependencies are already installed:
 
 ```bash

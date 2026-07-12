@@ -236,6 +236,15 @@ function packageProfile(target) {
       notes: "",
     };
   }
+  if (ids.has("gentoo")) {
+    return {
+      id: "gentoo",
+      label: "Gentoo Linux",
+      packageManager: "emerge",
+      format: ".gpkg.tar",
+      notes: "Built locally as a Portage GPKG; OpenRC user services require OpenRC 0.62+ with PAM",
+    };
+  }
   return {
     id: "other-linux",
     label: "Atomic desktops / other Linux distros",

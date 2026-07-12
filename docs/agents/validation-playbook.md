@@ -13,6 +13,7 @@ bash -n launcher/start.sh.template
 bash -n scripts/build-deb.sh
 bash -n scripts/build-rpm.sh
 bash -n scripts/build-pacman.sh
+bash -n scripts/build-gentoo.sh
 bash -n scripts/build-appimage.sh
 ```
 
@@ -106,7 +107,21 @@ bundles, desktop files, permissions, or runtime helpers are touched:
 ```bash
 ./scripts/build-rpm.sh
 ./scripts/build-pacman.sh
+./scripts/build-gentoo.sh
 ./scripts/build-appimage.sh
+```
+
+On Gentoo, index the produced GPKG through the same Portage metadata path used
+by installation and the updater:
+
+```bash
+pkg="$(find dist -maxdepth 1 -type f -name '*.gpkg.tar' -print -quit)"
+inspect="$(mktemp -d)"
+mkdir -p "$inspect/app-misc"
+cp "$pkg" "$inspect/app-misc/$(basename "$pkg")"
+PKGDIR="$inspect" BINPKG_FORMAT=gpkg emaint binhost --fix
+grep '^CPV: app-misc/codex-desktop-' "$inspect/Packages"
+CODEX_GENTOO_INSTALL_DRY_RUN=1 ./scripts/install-gentoo.sh "$pkg"
 ```
 
 Use a package version override when a deterministic package name helps review:
@@ -124,6 +139,13 @@ systemctl --user status codex-update-manager.service
 codex-update-manager status --json
 sed -n '1,120p' ~/.local/state/codex-update-manager/state.json
 sed -n '1,160p' ~/.local/state/codex-update-manager/service.log
+```
+
+Gentoo/OpenRC user-service checks:
+
+```bash
+rc-update --user show default
+rc-service --user codex-update-manager status
 ```
 
 For rebuild candidates:

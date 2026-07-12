@@ -7,6 +7,7 @@ const path = require("node:path");
 const DEB_IDS = ["debian", "ubuntu", "linuxmint", "pop", "elementary", "zorin"];
 const RPM_IDS = ["fedora", "rhel", "centos", "rocky", "almalinux", "ol", "sles", "suse", "opensuse"];
 const PACMAN_IDS = ["arch", "archlinux", "manjaro", "endeavouros", "artix"];
+const GENTOO_IDS = ["gentoo"];
 
 function trimOsReleaseValue(value) {
   return String(value ?? "").trim().replace(/^["']|["']$/g, "");
@@ -150,6 +151,9 @@ function detectPackageFormat(tokens, env) {
   if (tokenMatches(tokens, DEB_IDS)) {
     return "deb";
   }
+  if (tokenMatches(tokens, GENTOO_IDS)) {
+    return "gentoo";
+  }
   if (executableExists("pacman", env) && !executableExists("dpkg-deb", env)) {
     return "pacman";
   }
@@ -165,6 +169,9 @@ function detectPackageFormat(tokens, env) {
   if (executableExists("pacman", env)) {
     return "pacman";
   }
+  if (executableExists("emerge", env)) {
+    return "gentoo";
+  }
   return "unknown";
 }
 
@@ -178,6 +185,9 @@ function detectPackageManager(tokens, env, versionMajorValue, atomic) {
   }
   if (tokenMatches(tokens, DEB_IDS)) {
     return "apt";
+  }
+  if (tokenMatches(tokens, GENTOO_IDS)) {
+    return executableExists("emerge", env) ? "emerge" : "unknown";
   }
   if (tokenMatches(tokens, ["opensuse", "suse", "sles"])) {
     return "zypper";
@@ -197,7 +207,7 @@ function detectPackageManager(tokens, env, versionMajorValue, atomic) {
     }
     return "unknown";
   }
-  for (const command of ["apt", "dnf5", "dnf", "pacman", "zypper"]) {
+  for (const command of ["apt", "dnf5", "dnf", "pacman", "zypper", "emerge"]) {
     if (executableExists(command, env)) {
       return command;
     }
@@ -297,6 +307,7 @@ function linuxTargetSummary(target) {
 
 module.exports = {
   DEB_IDS,
+  GENTOO_IDS,
   PACMAN_IDS,
   RPM_IDS,
   detectLinuxTargetContext,

@@ -1,0 +1,66 @@
+EAPI=8
+
+DESCRIPTION="ChatGPT Desktop for Linux, rebuilt from the official macOS application"
+HOMEPAGE="https://github.com/ilysenko/codex-desktop-linux"
+SRC_URI=""
+LICENSE="MIT"
+SLOT="0"
+KEYWORDS="~__ARCH__"
+RESTRICT="strip"
+
+RDEPEND="
+    app-arch/7zip
+    app-arch/unzip
+    dev-lang/python
+    dev-libs/atk
+    dev-libs/glib
+    dev-util/desktop-file-utils
+    media-libs/fontconfig
+    net-misc/curl
+    net-print/cups
+    sys-apps/dbus
+    x11-libs/cairo
+    x11-libs/gtk+:3
+    x11-libs/libX11
+    x11-libs/libXcomposite
+    x11-libs/libXdamage
+    x11-libs/libXext
+    x11-libs/libXfixes
+    x11-libs/libXrandr
+    x11-libs/libxcb
+    x11-libs/libxkbcommon
+    x11-libs/pango
+    x11-misc/xdg-utils
+    media-libs/alsa-lib
+    media-libs/mesa
+    dev-libs/nspr
+    dev-libs/nss
+__UPDATER_DEPENDENCIES__
+"
+
+src_unpack() {
+    mkdir -p "${S}" || die
+    tar -xf "${FILESDIR}/payload.tar" -C "${S}" || die
+}
+
+src_install() {
+    cp -a "${S}/." "${ED}/" || die
+}
+
+pkg_postinst() {
+    :
+    xdg-icon-resource forceupdate --theme hicolor 2>/dev/null || true
+    update-desktop-database -q 2>/dev/null || true
+__POSTINST_SERVICE__
+}
+
+pkg_prerm() {
+    :
+__PRERM_SERVICE__
+}
+
+pkg_postrm() {
+    :
+    xdg-icon-resource forceupdate --theme hicolor 2>/dev/null || true
+    update-desktop-database -q 2>/dev/null || true
+}

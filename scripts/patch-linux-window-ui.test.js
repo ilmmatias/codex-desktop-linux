@@ -585,6 +585,34 @@ test("Linux target context parses distro, package, and desktop details", () => {
   }
 });
 
+test("Linux target context recognizes Gentoo and emerge", () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-gentoo-target-"));
+  try {
+    const binDir = path.join(tempRoot, "bin");
+    fs.mkdirSync(binDir);
+    const emerge = path.join(binDir, "emerge");
+    fs.writeFileSync(emerge, "#!/bin/sh\nexit 0\n", "utf8");
+    fs.chmodSync(emerge, 0o755);
+
+    const target = detectLinuxTargetContext({
+      osReleaseFields: {
+        ID: "gentoo",
+        ID_LIKE: "",
+        VERSION_ID: "2.17",
+        PRETTY_NAME: "Gentoo Linux",
+      },
+      env: { PATH: binDir },
+    });
+
+    assert.equal(target.packageFormat, "gentoo");
+    assert.equal(target.packageManager, "emerge");
+    assert.equal(packageProfile(target).id, "gentoo");
+    assert.equal(packageProfile(target).format, ".gpkg.tar");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("build info captures DMG hash, features, distro profile, and source revision", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "codex-build-info-"));
   // This test reads features.json from its own featuresRoot, which the

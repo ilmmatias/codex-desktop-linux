@@ -1,6 +1,6 @@
 #!/bin/bash
 # install-deps.sh — Install system dependencies for ChatGPT Desktop for Linux
-# Supports: Debian/Ubuntu (apt), Fedora 41+ (dnf5), Fedora <41 (dnf), Fedora Atomic detection (rpm-ostree), Arch (pacman), openSUSE (zypper)
+# Supports: Debian/Ubuntu (apt), Fedora, Fedora Atomic, Arch, openSUSE, and Gentoo (emerge)
 # Also installs the Rust toolchain (cargo) via rustup when not already present.
 set -Eeuo pipefail
 
@@ -9,6 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/linux-target-detect.sh"
 
 sudo() {
+    if [ "${CODEX_INSTALL_DEPS_DRY_RUN:-0}" = "1" ]; then
+        printf '[DRY-RUN] sudo'
+        printf ' %q' "$@"
+        printf '\n'
+        return 0
+    fi
     "$SCRIPT_DIR/sudo-with-alert.sh" "$@"
 }
 
@@ -293,6 +299,20 @@ install_zypper() {
     sudo zypper --non-interactive install -t pattern devel_basis
 }
 
+install_emerge() {
+    info "Detected Gentoo Linux (emerge)"
+    local node_packages=(dev-lang/nodejs)
+    if has_compatible_nodejs; then
+        info "Compatible Node.js toolchain already available; skipping dev-lang/nodejs"
+        node_packages=()
+    fi
+
+    sudo emerge --noreplace \
+        "${node_packages[@]}" dev-lang/python \
+        app-arch/7zip app-arch/unzip net-misc/curl \
+        sys-devel/gcc dev-build/make sys-apps/portage
+}
+
 install_gui_prompt_helper() {
     local package
     package="$(preferred_gui_prompt_package)"
@@ -312,6 +332,9 @@ install_gui_prompt_helper() {
             ;;
         zypper)
             sudo zypper --non-interactive install "$package"
+            ;;
+        emerge)
+            sudo emerge --noreplace "$package"
             ;;
     esac
 }
@@ -449,6 +472,7 @@ case "$DISTRO" in
     rpm-ostree) install_rpm_ostree ;;
     pacman)  install_pacman ;;
     zypper)  install_zypper ;;
+    emerge)  install_emerge ;;
     *)
         error "Unsupported package manager. Install manually:
   # Debian/Ubuntu: install Node.js 20+ with npm/npx from NodeSource, nvm, or another compatible source, then:
@@ -458,7 +482,8 @@ case "$DISTRO" in
     && sudo dnf groupinstall 'Development Tools'
   sudo pacman -S nodejs npm python p7zip curl unzip zstd base-devel                 # Arch
   sudo zypper install nodejs-default npm-default python3 p7zip-full curl unzip      # openSUSE
-    && sudo zypper install -t pattern devel_basis"
+    && sudo zypper install -t pattern devel_basis
+  sudo emerge --noreplace dev-lang/nodejs dev-lang/python app-arch/7zip app-arch/unzip net-misc/curl sys-devel/gcc dev-build/make sys-apps/portage  # Gentoo"
         ;;
 esac
 

@@ -76,6 +76,11 @@ pub enum Commands {
         #[arg(long)]
         path: PathBuf,
     },
+    /// Install a Gentoo Portage binary package (.gpkg.tar) with elevated privileges.
+    InstallGentoo {
+        #[arg(long)]
+        path: PathBuf,
+    },
     /// Install a Debian package as an explicit rollback with elevated privileges.
     InstallRollbackDeb {
         #[arg(long)]
@@ -88,6 +93,11 @@ pub enum Commands {
     },
     /// Install a pacman package as an explicit rollback with elevated privileges.
     InstallRollbackPacman {
+        #[arg(long)]
+        path: PathBuf,
+    },
+    /// Install a Gentoo GPKG as an explicit rollback with elevated privileges.
+    InstallRollbackGentoo {
         #[arg(long)]
         path: PathBuf,
     },

@@ -1,7 +1,8 @@
 # Auto-Update Manager
 
-Default native packages install `codex-update-manager`, a companion
-`systemd --user` service.
+Default native packages install `codex-update-manager` as an unprivileged user
+service: `systemd --user` on Debian/RPM/pacman packages and OpenRC's user-service
+mode on Gentoo.
 
 It:
 
@@ -60,6 +61,19 @@ codex-update-manager diagnose --json
 sed -n '1,160p' ~/.local/state/codex-update-manager/state.json
 sed -n '1,160p' ~/.local/state/codex-update-manager/service.log
 ```
+
+On Gentoo/OpenRC, use:
+
+```bash
+rc-service --user codex-update-manager status
+rc-update --user show default
+sed -n '1,160p' ~/.local/state/codex-update-manager/openrc.log
+```
+
+The OpenRC service is installed in `/etc/user/init.d`, runs as the logged-in
+desktop user, and therefore uses that user's XDG config, state, cache, runtime,
+and session environment. It is not a root daemon. OpenRC 0.62+ with its PAM
+user-service integration is the supported configuration.
 
 `diagnose` is read-only and intended for post-update support reports. It checks
 the persisted updater state, installed app executable, launcher `app.pid` and
@@ -128,6 +142,10 @@ Installing a no-updater package over a default package also stops and disables
 existing `codex-update-manager.service` instances for active user managers and
 removes stale per-user enablement links for inactive users.
 
+On Gentoo, the equivalent transition removes the updater from the user's
+OpenRC `default` runlevel and stops it. Package upgrades only start an already
+enabled service; they do not re-enable a service the user disabled explicitly.
+
 Manual updates should come from a checkout you trust:
 
 ```bash
@@ -185,12 +203,26 @@ Desktop usable, disable the user service:
 systemctl --user disable --now codex-update-manager.service
 ```
 
+Gentoo/OpenRC equivalent:
+
+```bash
+rc-service --user codex-update-manager stop
+rc-update --user del codex-update-manager default
+```
+
 Launching ChatGPT Desktop and upgrading the package will not re-enable a disabled
 updater service. Re-enable updater behavior explicitly when you want automatic
 checks again:
 
 ```bash
 systemctl --user enable --now codex-update-manager.service
+```
+
+Gentoo/OpenRC equivalent:
+
+```bash
+rc-update --user add codex-update-manager default
+rc-service --user codex-update-manager start
 ```
 
 ## Wrapper Updates

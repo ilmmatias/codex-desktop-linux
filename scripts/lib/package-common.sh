@@ -288,6 +288,13 @@ SCRIPT
 render_no_updater_transition_cleanup_helper() {
     local target="$1"
 
+    if [ -n "${NO_UPDATER_CLEANUP_SOURCE:-}" ]; then
+        sed -e "s/codex-desktop/$(sed_escape_replacement "$PACKAGE_NAME")/g" \
+            "$NO_UPDATER_CLEANUP_SOURCE" > "$target"
+        chmod 0644 "$target"
+        return
+    fi
+
     cat > "$target" <<'SCRIPT'
 #!/bin/sh
 
@@ -735,9 +742,12 @@ stage_common_package_files() {
         "$root/usr/share/applications" \
         "$root/usr/share/icons/hicolor/256x256/apps"
     if package_with_updater_enabled; then
-        mkdir -p \
-            "$root/usr/lib/systemd/user" \
-            "$root/usr/share/polkit-1/actions"
+        mkdir -p "$root/usr/share/polkit-1/actions"
+        case "${PACKAGE_SERVICE_MANAGER:-systemd}" in
+            systemd) mkdir -p "$root/usr/lib/systemd/user" ;;
+            openrc-user) mkdir -p "$root/etc/user/init.d" ;;
+            *) error "Unsupported package service manager: ${PACKAGE_SERVICE_MANAGER:-}" ;;
+        esac
     fi
 
     rm -rf "$app_root"
@@ -748,11 +758,23 @@ stage_common_package_files() {
     render_desktop_entry_doctor_helper "$app_root/.codex-linux/codex-desktop-entry-doctor.sh"
     render_desktop_entry "$root/usr/share/applications/$PACKAGE_NAME.desktop"
     cp "$ICON_SOURCE" "$root/usr/share/icons/hicolor/256x256/apps/$PACKAGE_NAME.png"
+    if [ "${PACKAGE_SERVICE_MANAGER:-systemd}" = "openrc-user" ]; then
+        cp "$USER_SERVICE_HELPER_SOURCE" "$app_root/.codex-linux/codex-update-manager-openrc-user-service.sh"
+        chmod 0644 "$app_root/.codex-linux/codex-update-manager-openrc-user-service.sh"
+    fi
     if package_with_updater_enabled; then
         cp "$UPDATER_BINARY_SOURCE" "$root/usr/bin/codex-update-manager"
         chmod 0755 "$root/usr/bin/codex-update-manager"
-        cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-update-manager.service"
-        chmod 0644 "$root/usr/lib/systemd/user/codex-update-manager.service"
+        case "${PACKAGE_SERVICE_MANAGER:-systemd}" in
+            systemd)
+                cp "$UPDATER_SERVICE_SOURCE" "$root/usr/lib/systemd/user/codex-update-manager.service"
+                chmod 0644 "$root/usr/lib/systemd/user/codex-update-manager.service"
+                ;;
+            openrc-user)
+                cp "$UPDATER_SERVICE_SOURCE" "$root/etc/user/init.d/codex-update-manager"
+                chmod 0755 "$root/etc/user/init.d/codex-update-manager"
+                ;;
+        esac
         cp "$polkit_policy" "$root/usr/share/polkit-1/actions/com.github.ilysenko.codex-desktop-linux.update.policy"
         chmod 0644 "$root/usr/share/polkit-1/actions/com.github.ilysenko.codex-desktop-linux.update.policy"
     else
@@ -820,6 +842,7 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/scripts/build-deb.sh" "$update_builder_root/scripts/build-deb.sh"
     cp "$REPO_DIR/scripts/build-rpm.sh" "$update_builder_root/scripts/build-rpm.sh"
     cp "$REPO_DIR/scripts/build-pacman.sh" "$update_builder_root/scripts/build-pacman.sh"
+    cp "$REPO_DIR/scripts/build-gentoo.sh" "$update_builder_root/scripts/build-gentoo.sh"
     cp "$REPO_DIR/scripts/rebuild-candidate.sh" "$update_builder_root/scripts/rebuild-candidate.sh"
     cp "$REPO_DIR/scripts/validate-upstream-dmg.js" "$update_builder_root/scripts/validate-upstream-dmg.js"
     cp "$REPO_DIR/scripts/patch-linux-window-ui.js" "$update_builder_root/scripts/patch-linux-window-ui.js"
@@ -857,6 +880,11 @@ stage_update_builder_bundle() {
     cp "$REPO_DIR/packaging/linux/codex-desktop-entry-doctor.sh" \
         "$update_builder_root/packaging/linux/codex-desktop-entry-doctor.sh"
     cp "$REPO_DIR/packaging/linux/codex-packaged-runtime.sh" "$update_builder_root/packaging/linux/codex-packaged-runtime.sh"
+    cp "$REPO_DIR/packaging/linux/codex-packaged-runtime-openrc.sh" "$update_builder_root/packaging/linux/codex-packaged-runtime-openrc.sh"
+    cp "$REPO_DIR/packaging/linux/codex-update-manager.openrc" "$update_builder_root/packaging/linux/codex-update-manager.openrc"
+    cp "$REPO_DIR/packaging/linux/codex-update-manager-openrc-user-service.sh" "$update_builder_root/packaging/linux/codex-update-manager-openrc-user-service.sh"
+    cp "$REPO_DIR/packaging/linux/codex-no-updater-openrc-cleanup.sh" "$update_builder_root/packaging/linux/codex-no-updater-openrc-cleanup.sh"
+    cp "$REPO_DIR/packaging/linux/codex-desktop.ebuild.template" "$update_builder_root/packaging/linux/codex-desktop.ebuild.template"
     cp "$REPO_DIR/packaging/linux/com.github.ilysenko.codex-desktop-linux.update.policy" \
         "$update_builder_root/packaging/linux/com.github.ilysenko.codex-desktop-linux.update.policy"
     cp "$REPO_DIR/packaging/linux/codex-update-manager-user-service.sh" \
