@@ -2426,6 +2426,43 @@ SCRIPT
     [[ "$first_line" == *"<$explicit_realpath>"* ]] || fail "Explicit transactional build should receive explicit DMG: $first_line"
 }
 
+test_make_rebuild_targets_omit_empty_dmg_argument() {
+    info "Checking make rebuild targets omit an unset DMG argument"
+    local workspace="$TMP_DIR/make-rebuild-dmg"
+    local repo="$workspace/repo"
+    local explicit_dmg="$workspace/explicit.dmg"
+
+    mkdir -p "$repo/scripts"
+    cp "$REPO_DIR/Makefile" "$repo/Makefile"
+    printf '%s' "explicit" >"$explicit_dmg"
+
+    cat >"$repo/scripts/rebuild-candidate.sh" <<'SCRIPT'
+#!/usr/bin/env bash
+set -eu
+printf 'CALL:'
+for arg in "$@"; do
+    printf '<%s>' "$arg"
+done
+printf '\n'
+SCRIPT
+    chmod +x "$repo/scripts/rebuild-candidate.sh"
+
+    make -C "$repo" rebuild >"$workspace/rebuild-default.out"
+    assert_contains "$workspace/rebuild-default.out" "CALL:"
+    assert_not_contains "$workspace/rebuild-default.out" "CALL:< >"
+    assert_not_contains "$workspace/rebuild-default.out" "CALL:<"
+
+    make -C "$repo" rebuild-install >"$workspace/install-default.out"
+    assert_contains "$workspace/install-default.out" "CALL:<--install>"
+    assert_not_contains "$workspace/install-default.out" "CALL:<--install><"
+
+    make -C "$repo" rebuild DMG="$explicit_dmg" >"$workspace/rebuild-explicit.out"
+    assert_contains "$workspace/rebuild-explicit.out" "CALL:<$explicit_dmg>"
+
+    make -C "$repo" rebuild-install DMG="$explicit_dmg" >"$workspace/install-explicit.out"
+    assert_contains "$workspace/install-explicit.out" "CALL:<--install><$explicit_dmg>"
+}
+
 test_candidate_install_is_transactional() {
     info "Checking atomic candidate promotion, first install, and rollback"
     local workspace="$TMP_DIR/candidate-install"
@@ -2789,8 +2826,10 @@ test_sudo_alert_wrapper() {
     local workspace="$TMP_DIR/sudo-alert"
     local bin_dir="$workspace/bin"
     local log_file="$workspace/events.log"
+    local sound_file="$workspace/dialog-warning.oga"
     local wrapper="$REPO_DIR/scripts/sudo-with-alert.sh"
     mkdir -p "$bin_dir"
+    : > "$sound_file"
 
     cat > "$bin_dir/sudo" <<'EOF'
 #!/usr/bin/env bash
@@ -2829,17 +2868,17 @@ EOF
     assert_contains "$log_file" 'sudo:true'
 
     : > "$log_file"
-    CODEX_SUDO_ALERT=1 SUDO_ALERT_TEST_CACHE_STATUS=1 \
+    CODEX_SUDO_ALERT=1 CODEX_SUDO_ALERT_SOUND_FILE="$sound_file" SUDO_ALERT_TEST_CACHE_STATUS=1 \
         PATH="$bin_dir:$HOST_TOOL_PATH" SUDO_ALERT_TEST_LOG="$log_file" \
         "$wrapper" true
     [ "$(sed -n '1p' "$log_file")" = 'sudo:-n -v' ] || fail "Expected cached sudo check first"
-    [ "$(sed -n '2p' "$log_file")" = 'alert:/usr/share/sounds/freedesktop/stereo/dialog-warning.oga' ] \
+    [ "$(sed -n '2p' "$log_file")" = "alert:$sound_file" ] \
         || fail "Expected alert before authentication"
     [ "$(sed -n '3p' "$log_file")" = 'sudo:-v' ] || fail "Expected sudo authentication after alert"
     [ "$(sed -n '4p' "$log_file")" = 'sudo:true' ] || fail "Expected command after authentication"
 
     : > "$log_file"
-    CODEX_SUDO_ALERT=1 SUDO_ALERT_TEST_CACHE_STATUS=1 SUDO_ALERT_TEST_SOUND_STATUS=1 \
+    CODEX_SUDO_ALERT=1 CODEX_SUDO_ALERT_SOUND_FILE="$sound_file" SUDO_ALERT_TEST_CACHE_STATUS=1 SUDO_ALERT_TEST_SOUND_STATUS=1 \
         PATH="$bin_dir:$HOST_TOOL_PATH" SUDO_ALERT_TEST_LOG="$log_file" \
         "$wrapper" true 2>/dev/null
     assert_contains "$log_file" 'sudo:-v'
@@ -3222,7 +3261,7 @@ test_setup_native_wizard_disable_is_non_destructive() {
     local config="$workspace/features.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
-    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys-v1.json"
+    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
     local model_file="$fake_home/.local/share/codex-desktop/read-aloud/kokoro-venv/bin/python"
     local plugin_cache="$fake_home/.codex/plugins/cache/openai-bundled/read-aloud"
 
@@ -3613,7 +3652,7 @@ test_setup_native_wizard_cleanup_requires_interactive_confirmation() {
     local config="$workspace/features.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
-    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys-v1.json"
+    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
 
     make_wizard_feature_root "$features_root"
     printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
@@ -3641,7 +3680,7 @@ test_setup_native_wizard_dry_run_cleanup_allows_noninteractive_preview() {
     local config="$workspace/features.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
-    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys-v1.json"
+    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
 
     make_wizard_feature_root "$features_root"
     printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
@@ -3706,7 +3745,7 @@ test_setup_native_wizard_dry_run_cleanup_does_not_delete_confirmed_paths() {
     local config="$workspace/features.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
-    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys-v1.json"
+    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
 
     make_wizard_feature_root "$features_root"
     printf '%s\n' '{"enabled":["remote-mobile-control"]}' > "$config"
@@ -3745,7 +3784,7 @@ test_setup_native_wizard_cleanup_deletes_only_confirmed_paths() {
     local config="$workspace/features.json"
     local output_log="$workspace/output.log"
     local fake_home="$workspace/home"
-    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys-v1.json"
+    local key_file="$fake_home/.config/codex-desktop/remote-control-device-keys/remote-control-device-keys-v1.json"
     local read_aloud_data="$fake_home/.local/share/codex-desktop/read-aloud"
     local plugin_cache="$fake_home/.codex/plugins/cache/openai-bundled/read-aloud"
 
@@ -3927,6 +3966,7 @@ run_update_nix_hash_fixture() {
         CALL_LOG="$fixture/calls.log" \
         VALIDATE_PIN_CHANGE="$validate_pin_change" \
         NIX_HASH="$nix_hash" \
+        NIX_VERIFY_OUTPUTS="${NIX_VERIFY_OUTPUTS:-}" \
         bash "$fixture/scripts/ci/update-nix-hashes.sh" > "$fixture/output.log" 2>&1
 }
 
@@ -3964,6 +4004,69 @@ test_update_nix_hashes_verifies_changed_dmg_hash() {
     assert_contains "$fixture/output.log" "Nix builds succeeded after refreshing the upstream pins and Codex.dmg hash."
     assert_contains "$fixture/calls.log" "nix-store --add-fixed"
     assert_contains "$fixture/calls.log" "nix build"
+}
+
+test_update_nix_hashes_supports_focused_verification_output() {
+    info "Checking Nix hash refresh can verify one focused feature output"
+    local fixture="$TMP_DIR/nix-hash-refresh-focused-output"
+    local hash_b="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+
+    NIX_VERIFY_OUTPUTS=".#checks.x86_64-linux.nix-linux-features-multi-feature" \
+        run_update_nix_hash_fixture "$(basename "$fixture")" 0 "$hash_b"
+
+    assert_contains "$fixture/calls.log" "nix build .#checks.x86_64-linux.nix-linux-features-multi-feature"
+    assert_not_contains "$fixture/calls.log" ".#codex-desktop-computer-use-ui"
+}
+
+test_update_nix_hashes_skips_output_build_when_refresh_ref_already_matches() {
+    info "Checking a serialized duplicate Nix refresh adopts matching pin files"
+    local fixture="$TMP_DIR/nix-hash-refresh-matching-ref"
+    local hash_b="sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    local initial_branch
+
+    make_update_nix_hash_fixture "$fixture"
+    initial_branch="$(git -C "$fixture" branch --show-current)"
+    git -C "$fixture" checkout -q -b existing-refresh
+    python3 - "$fixture/flake.nix" "$hash_b" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+text = re.sub(
+    r'(codexDmg = pkgs\.fetchurl \{.*?hash = ")[^"]+(";)',
+    rf'\g<1>{sys.argv[2]}\2',
+    text,
+    count=1,
+    flags=re.DOTALL,
+)
+path.write_text(text)
+PY
+    git -C "$fixture" add flake.nix
+    git -C "$fixture" commit -q -m "existing refresh"
+    git -C "$fixture" checkout -q "$initial_branch"
+    : > "$fixture/calls.log"
+
+    PATH="$fixture/bin:$PATH" \
+        REPO_DIR="$fixture" \
+        FLAKE_FILE="$fixture/flake.nix" \
+        UPSTREAM_DMG_PATH="$fixture/Codex.dmg" \
+        VERIFY_LOG="$fixture/verify.log" \
+        CALL_LOG="$fixture/calls.log" \
+        NIX_HASH="$hash_b" \
+        NIX_COMPARE_REF=existing-refresh \
+        bash "$fixture/scripts/ci/update-nix-hashes.sh" > "$fixture/output.log" 2>&1
+
+    assert_contains "$fixture/output.log" "Nix pins already match existing-refresh"
+    assert_not_contains "$fixture/calls.log" "nix-store"
+    assert_not_contains "$fixture/calls.log" "nix build"
+}
+
+test_ci_local_mounts_shared_git_metadata_for_linked_worktrees() {
+    info "Checking ci-local supports linked Git worktrees"
+    assert_contains "$REPO_DIR/scripts/ci-local.sh" 'rev-parse --path-format=absolute --git-common-dir'
+    assert_contains "$REPO_DIR/scripts/ci-local.sh" 'git_common_dir:$git_common_dir:ro'
 }
 
 test_installer_detects_electron_version_from_plist() {
@@ -5037,6 +5140,7 @@ test_launcher_template_sanity() {
     assert_contains "$REPO_DIR/launcher/start.sh.template" "codex_capture_original_ld_library_path"
     assert_contains "$REPO_DIR/flake.nix" 'export LD_LIBRARY_PATH="${electronLibPath}:${runtimeLibPath}'
     assert_not_contains "$REPO_DIR/flake.nix" '--prefix LD_LIBRARY_PATH'
+    assert_contains "$REPO_DIR/flake.nix" 'export CODEX_LINUX_SOURCE_REMOTE="${flakeSourceRemote}"'
     assert_contains "$REPO_DIR/install.sh" 'DEFAULT_CODEX_WEBVIEW_PORT=5175'
     assert_contains "$REPO_DIR/install.sh" "inspect_rebuild_candidate"
     assert_contains "$REPO_DIR/scripts/lib/install-helpers.sh" "--inspect"
@@ -5118,6 +5222,7 @@ launcher_hooks_body = source.split("run_feature_launcher_hooks() {", 1)[1].split
 cold_start_hooks_body = source.split("run_cold_start_hooks() {", 1)[1].split("run_cli_preflight() {", 1)[0]
 after_exit_hooks_body = source.split("run_feature_after_exit_hooks() {", 1)[1].split("run_cli_preflight() {", 1)[0]
 cli_probe_body = source.split("codex_cli_version_probe() {", 1)[1].split("codex_cli_version() {", 1)[0]
+cli_preflight_body = source.split("run_cli_preflight() {", 1)[1].split("run_cli_preflight_background() {", 1)[0]
 notify_body = source.split("notify_error() {", 1)[1].split("canonical_path() {", 1)[0]
 update_manager_body = source.split("run_update_manager() {", 1)[1].split("pid_is_current_user() {", 1)[0]
 stop_body = source.split("stop_owned_webview_server() {", 1)[1].split("owned_webview_server_pid() {", 1)[0]
@@ -5272,7 +5377,7 @@ if 'if needs_cold_start && [ -z "$CODEX_CLI_PATH" ]; then' not in runtime_body:
     raise SystemExit("second-instance handoff must skip missing-CLI failure")
 if '"$HOME/.bun/bin/codex"' not in source:
     raise SystemExit("CLI lookup must include bun global install path")
-if "codex_cli_version_probe()" not in source or "codex_cli_version()" not in source:
+if "codex_cli_version_probe()" not in source or "codex_cli_version()" not in source or "codex_cli_missing_optional_dependency()" not in source:
     raise SystemExit("CLI lookup must log a bounded best-effort resolved CLI version probe")
 if "version unknown; set CODEX_CLI_PATH=/path/to/codex" not in source:
     raise SystemExit("CLI lookup diagnostics must explain explicit CODEX_CLI_PATH pinning")
@@ -5298,6 +5403,14 @@ if 'codex_run_host_command "$hook"' not in after_exit_hooks_body:
     raise SystemExit("launcher after-exit hooks must not inherit packaged LD_LIBRARY_PATH")
 if 'codex_exec_host_command "$@"' not in cli_probe_body:
     raise SystemExit("launcher CLI version probes must not inherit packaged LD_LIBRARY_PATH")
+if "CODEX_CLI_PROBE_STDERR_FILE" in source:
+    raise SystemExit("launcher CLI probes must not expose stderr redirection through inherited environment")
+if 'local require_success="${2:-0}"' not in cli_preflight_body:
+    raise SystemExit("CLI preflight must support a required-success repair mode")
+if not re.search(r'cli_repair_required=0\s+if codex_cli_missing_optional_dependency "\$CODEX_CLI_PATH"; then\s+cli_repair_required=1\s+fi\s+if \[ "\$\{CODEX_SYNC_CLI_PREFLIGHT:-0\}" = "1" \]; then\s+if ! run_cli_preflight 0 "\$cli_repair_required"; then.*?exit 1.*?cli_preflight_repair_sync', runtime_body, re.S):
+    raise SystemExit("sync CLI preflight must detect a required repair first and preserve fail-closed semantics")
+if not re.search(r'elif \[ "\$cli_repair_required" = "1" \]; then\s+if ! run_cli_preflight 0 1; then.*?exit 1.*?cli_preflight_repair_sync', runtime_body, re.S):
+    raise SystemExit("a known broken Linux CLI must be repaired synchronously or abort before Electron launch")
 if 'codex_run_host_command notify-send' not in notify_body:
     raise SystemExit("desktop notifications must not inherit packaged LD_LIBRARY_PATH")
 if 'codex_run_host_command "$CODEX_UPDATE_MANAGER_PATH" "$@"' not in update_manager_body:
@@ -6159,7 +6272,8 @@ PY
 test_launcher_cli_resolution_policy() {
     info "Checking launcher CLI resolution policy"
     local launcher_probe="$TMP_DIR/launcher-cli-policy-probe.sh"
-    python3 - "$REPO_DIR/launcher/start.sh.template" "$launcher_probe" <<'PY'
+    local routing_probe="$TMP_DIR/launcher-cli-preflight-routing-probe.sh"
+    python3 - "$REPO_DIR/launcher/start.sh.template" "$launcher_probe" "$routing_probe" <<'PY'
 import pathlib
 import re
 import sys
@@ -6169,7 +6283,7 @@ functions = [source[
     source.index("codex_restore_original_ld_library_path() {"):
     source.index("# Capture before package-specific launcher patches")
 ]]
-for name in ("find_codex_cli", "pid_parent_matches", "codex_cli_version_probe", "codex_cli_version", "log_codex_cli_path"):
+for name in ("find_codex_cli", "pid_parent_matches", "codex_cli_version_probe", "codex_cli_version", "codex_cli_missing_optional_dependency", "log_codex_cli_path"):
     match = re.search(r"^" + re.escape(name) + r"\(\) \{[\s\S]*?^\}\n", source, re.M)
     if match is None:
         raise SystemExit(f"missing {name}")
@@ -6187,6 +6301,9 @@ case "${1:?}" in
     version)
         codex_cli_version "$2"
         ;;
+    missing-optional)
+        codex_cli_missing_optional_dependency "$2"
+        ;;
     log)
         CODEX_CLI_PATH="${2:-}"
         export CODEX_CLI_PATH
@@ -6199,8 +6316,39 @@ esac
 ''',
     encoding="utf-8",
 )
+
+preflight_match = re.search(r"^run_cli_preflight\(\) \{[\s\S]*?^\}\n", source, re.M)
+if preflight_match is None:
+    raise SystemExit("missing run_cli_preflight")
+routing_start = source.index('if needs_cold_start; then\n    cli_repair_required=0')
+routing_end = source.index("\nexport_packaged_runtime_env", routing_start)
+pathlib.Path(sys.argv[3]).write_text(
+    "#!/usr/bin/env bash\n"
+    "set -Eeuo pipefail\n\n"
+    + r'''
+CODEX_CLI_PATH=/tmp/codex
+has_update_manager() { [ "${UPDATE_MANAGER_AVAILABLE:-0}" = "1" ]; }
+run_update_manager() {
+    if [ "${UPDATE_MANAGER_RESULT:-failure}" = "success" ]; then
+        printf '%s\n' /tmp/repaired-codex
+        return 0
+    fi
+    return 1
+}
+notify_error() { printf 'notify=%s\n' "$1" >> "$ROUTING_LOG"; }
+log_phase() { printf 'phase=%s\n' "$1" >> "$ROUTING_LOG"; }
+needs_cold_start() { return 0; }
+codex_cli_missing_optional_dependency() { [ "${BROKEN_CLI:-0}" = "1" ]; }
+run_cli_preflight_background() { printf 'background=1\n' >> "$ROUTING_LOG"; }
+'''
+    + preflight_match.group(0)
+    + "\n"
+    + source[routing_start:routing_end]
+    + "\n",
+    encoding="utf-8",
+)
 PY
-    chmod +x "$launcher_probe"
+    chmod +x "$launcher_probe" "$routing_probe"
 
     local workspace="$TMP_DIR/launcher-cli-policy"
     local fake_home="$workspace/home"
@@ -6233,6 +6381,35 @@ PY
     [ "$version_output" = "0.150.0" ] || fail "CLI version probe must read --version output, got $version_output"
     version_output="$(env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" "$launcher_probe" version "$fallback_version_cli")"
     [ "$version_output" = "0.151.0" ] || fail "CLI version probe must fall back to version output, got $version_output"
+
+    local inherited_stderr_target="$workspace/inherited-stderr-target"
+    version_output="$(env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" CODEX_CLI_PROBE_STDERR_FILE="$inherited_stderr_target" "$launcher_probe" version "$dash_version_cli")"
+    [ "$version_output" = "0.150.0" ] || fail "inherited probe environment must not affect version output"
+    [ ! -e "$inherited_stderr_target" ] || fail "inherited environment must not control CLI probe stderr files"
+
+    local missing_x64_cli="$workspace/missing-x64-codex"
+    local missing_arm64_cli="$workspace/missing-arm64-codex"
+    local unrelated_failure_cli="$workspace/unrelated-failure-codex"
+    local successful_warning_cli="$workspace/successful-warning-codex"
+    printf '#!/usr/bin/env bash\nprintf "Error: Missing optional dependency@openai/codex-linux-x64. Reinstall Codex.\\n" >&2\nexit 1\n' > "$missing_x64_cli"
+    printf '#!/usr/bin/env bash\nprintf "Missing optional dependency @openai/codex-linux-arm64\\n" >&2\nexit 1\n' > "$missing_arm64_cli"
+    printf '#!/usr/bin/env bash\nprintf "network unavailable\\n" >&2\nexit 1\n' > "$unrelated_failure_cli"
+    printf '#!/usr/bin/env bash\nprintf "Missing optional dependency @openai/codex-linux-x64.\\n" >&2\nprintf "codex-cli 0.200.0\\n"\n' > "$successful_warning_cli"
+    chmod +x "$missing_x64_cli" "$missing_arm64_cli" "$unrelated_failure_cli" "$successful_warning_cli"
+    env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" TMPDIR="$workspace" "$launcher_probe" missing-optional "$missing_x64_cli" || fail "x64 optional dependency failure must request synchronous repair"
+    env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" TMPDIR="$workspace" "$launcher_probe" missing-optional "$missing_arm64_cli" || fail "arm64 optional dependency failure must request synchronous repair"
+    if compgen -G "$workspace/codex-cli-output.*" >/dev/null || compgen -G "$workspace/codex-cli-error.*" >/dev/null; then
+        fail "optional dependency probes must remove temporary output files"
+    fi
+    if env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" TMPDIR="$workspace" "$launcher_probe" missing-optional "$unrelated_failure_cli"; then
+        fail "unrelated CLI failures must not request synchronous npm repair"
+    fi
+    if env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" TMPDIR="$workspace" "$launcher_probe" missing-optional "$successful_warning_cli"; then
+        fail "successful CLI probes must not request repair based on diagnostic text alone"
+    fi
+    if env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" "$launcher_probe" missing-optional "$fallback_version_cli"; then
+        fail "working CLI versions must keep the background preflight"
+    fi
 
     # The version probe result is read through command substitution on the
     # launch path. The watchdog subshell (and its sleep child) must not
@@ -6289,6 +6466,9 @@ PY
         kill -9 "$hanging_pid" 2>/dev/null || true
         fail "hanging CLI probe left process $hanging_pid alive"
     fi
+    if env -i PATH="$HOST_TOOL_PATH" HOME="$fake_home" TMPDIR="$workspace" "$launcher_probe" missing-optional "$hanging_cli"; then
+        fail "timed-out CLI probes must not request synchronous npm repair"
+    fi
 
     local hanging_log_cli="$workspace/hanging-log-codex"
     local hanging_log_pid_file="$workspace/hanging-log.pid"
@@ -6312,6 +6492,43 @@ PY
         kill -9 "$hanging_log_pid" 2>/dev/null || true
         fail "hanging CLI log probe left process $hanging_log_pid alive"
     fi
+
+    local routing_log="$workspace/preflight-routing.log"
+    if env -i PATH="$HOST_TOOL_PATH" ROUTING_LOG="$routing_log" \
+        CODEX_SYNC_CLI_PREFLIGHT=1 BROKEN_CLI=1 UPDATE_MANAGER_AVAILABLE=0 \
+        "$routing_probe"; then
+        fail "sync preflight must abort when a known-broken CLI cannot be repaired"
+    fi
+    grep -q '^notify=The selected Codex CLI is missing' "$routing_log" || \
+        fail "sync required repair failure must show actionable reinstall guidance"
+
+    : > "$routing_log"
+    env -i PATH="$HOST_TOOL_PATH" ROUTING_LOG="$routing_log" \
+        CODEX_SYNC_CLI_PREFLIGHT=1 BROKEN_CLI=1 UPDATE_MANAGER_AVAILABLE=1 \
+        UPDATE_MANAGER_RESULT=success "$routing_probe"
+    grep -qx 'phase=cli_preflight_repair_sync' "$routing_log" || \
+        fail "sync preflight must record a successful required repair"
+
+    : > "$routing_log"
+    env -i PATH="$HOST_TOOL_PATH" ROUTING_LOG="$routing_log" \
+        CODEX_SYNC_CLI_PREFLIGHT=1 BROKEN_CLI=0 UPDATE_MANAGER_AVAILABLE=0 \
+        "$routing_probe"
+    grep -qx 'phase=cli_preflight_sync' "$routing_log" || \
+        fail "sync preflight must remain fail-soft for a CLI that is not known broken"
+
+    : > "$routing_log"
+    if env -i PATH="$HOST_TOOL_PATH" ROUTING_LOG="$routing_log" \
+        BROKEN_CLI=1 UPDATE_MANAGER_AVAILABLE=0 "$routing_probe"; then
+        fail "default preflight must abort when a known-broken CLI cannot be repaired"
+    fi
+
+    : > "$routing_log"
+    env -i PATH="$HOST_TOOL_PATH" ROUTING_LOG="$routing_log" \
+        BROKEN_CLI=0 UPDATE_MANAGER_AVAILABLE=0 "$routing_probe"
+    grep -qx 'background=1' "$routing_log" || \
+        fail "healthy default preflight must stay asynchronous"
+    grep -qx 'phase=cli_preflight_backgrounded' "$routing_log" || \
+        fail "healthy default preflight must record the background path"
 }
 
 test_webview_server_cache_policy() {
@@ -7434,7 +7651,7 @@ async function Wa(e){return e}
 async function Hw(e){return process.platform!==`win32`&&process.platform!==`darwin`?null:(zw=!0,Lw??Rw??(Rw=(async()=>{let r=await Ww(e.buildFlavor,e.appBrand,e.repoRoot),i=new n.Tray(r.defaultIcon);return i})()))}
 async function Ww(e,t,i){if(process.platform===`darwin`){return null}let r=K9(e,t,i);return r==null?{defaultIcon:await n.app.getFileIcon(process.execPath,{size:`small`}),chronicleRunningIcon:null}:{defaultIcon:r,chronicleRunningIcon:null}}
 function K9(e,t,r){let a=[(0,i.join)(r,`electron`,`src`,`icons`,`tray.png`)];for(let e of a){let t=n.nativeImage.createFromPath(e);if(!t.isEmpty())return t}return null}
-var pb=class{trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};constructor(){this.tray={on(){},setContextMenu(){},popUpContextMenu(){}};this.onTrayButtonClick=()=>{};this.tray.on(`click`,()=>{this.onTrayButtonClick()}),this.tray.on(`right-click`,()=>{this.openNativeTrayMenu()})}async handleMessage(e){switch(e.type){case`tray-menu-threads-changed`:this.trayMenuThreads=e.trayMenuThreads;return}}openNativeTrayMenu(){this.updateChronicleTrayIcon();let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems());e.once(`menu-will-show`,()=>{this.isNativeTrayMenuOpen=!0}),e.once(`menu-will-close`,()=>{this.isNativeTrayMenuOpen=!1,this.handleNativeTrayMenuClosed()}),this.tray.popUpContextMenu(e)}updateChronicleTrayIcon(){}getNativeTrayMenuItems(){return[]}}
+var pb=class{nativeTrayClickSuppressionReason=null;clearNativeTrayClickSuppressionTimeout=null;chronicleTrayIconRefreshInterval=null;chronicleTrayIconState=`default`;isNativeTrayMenuOpen=!1;trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};constructor(){this.tray={on(){},setContextMenu(){},popUpContextMenu(){}};this.onTrayButtonClick=()=>{};this.tray.on(`click`,()=>{this.onTrayButtonClick()}),this.tray.on(`right-click`,()=>{this.openNativeTrayMenu()})}async handleMessage(e){switch(e.type){case`tray-menu-threads-changed`:this.trayMenuThreads=e.trayMenuThreads;return}}openNativeTrayMenu(){this.updateChronicleTrayIcon();let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems());e.once(`menu-will-show`,()=>{this.isNativeTrayMenuOpen=!0}),e.once(`menu-will-close`,()=>{this.isNativeTrayMenuOpen=!1,this.handleNativeTrayMenuClosed()}),this.tray.popUpContextMenu(e)}updateChronicleTrayIcon(){}getNativeTrayMenuItems(){return[]}}
 v&&k.on(`close`,e=>{this.persistPrimaryWindowBounds(k);let t=this.getPrimaryWindows().some(e=>e!==k);if(process.platform===`win32`&&!this.isAppQuitting&&this.options.canHideLastWindowToTray?.()===!0&&!t){e.preventDefault(),k.hide();return}if(process.platform===`darwin`&&!this.isAppQuitting&&!t){e.preventDefault(),k.hide()}});
 let E=process.platform===`win32`;
 let oe=async()=>{O=!0;try{await Hw({appBrand:a.U(),buildFlavor:b,repoRoot:j.repoRoot})}catch(e){O=!1}};
@@ -7450,7 +7667,8 @@ JS
     assert_contains "$extracted/.vite/build/main-test.js" '(process.platform===`win32`||process.platform===`linux`)&&!this.isAppQuitting'
     assert_contains "$extracted/.vite/build/main-test.js" '!this.isAppQuitting&&!(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress())'
     assert_contains "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems())'
-    assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.setLinuxTrayContextMenu(),this.tray.on(`click`'
+    assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&(codexLinuxSetTrayController(this),this.setLinuxTrayContextMenu()),this.tray.on(`click`'
+    assert_contains "$extracted/.vite/build/main-test.js" 'codexLinuxTrayRecoveryHandler=()=>{let e=codexLinuxTrayController;e?.setLinuxTrayContextMenu?.()}'
     assert_contains "$extracted/.vite/build/main-test.js" 'process.platform===`linux`?this.openNativeTrayMenu():this.onTrayButtonClick()'
     assert_contains "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()))return;'
     assert_contains "$extracted/.vite/build/main-test.js" 'let e=process.platform===`linux`&&this.setLinuxTrayContextMenu?this.setLinuxTrayContextMenu():n.Menu.buildFromTemplate'
@@ -7557,7 +7775,7 @@ NODE
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'nativeImage.createFromPath(process.resourcesPath+`/../content/webview/assets/app-test.png`)' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`)&&!this.isAppQuitting' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'setLinuxTrayContextMenu(){' '1'
-    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&this.setLinuxTrayContextMenu(),this.tray.on(`click`' '1'
+    assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`&&(codexLinuxSetTrayController(this),this.setLinuxTrayContextMenu()),this.tray.on(`click`' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'process.platform===`linux`?this.openNativeTrayMenu():this.onTrayButtonClick()' '1'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()' '3'
     assert_occurrence_count "$extracted/.vite/build/main-test.js" 'openNativeTrayMenu(){if(process.platform===`linux`&&(typeof codexLinuxIsQuitInProgress===`function`&&codexLinuxIsQuitInProgress()))return;' '1'
@@ -7724,10 +7942,10 @@ JS
 import{t as d}from"./jsx-runtime-test.js";var c={"general-settings":{id:`settings.nav.general-settings`,defaultMessage:`General`,description:`Title for general settings section`},"keyboard-shortcuts":{id:`settings.nav.keyboard-shortcuts`,defaultMessage:`Keyboard shortcuts`,description:`Title for keyboard shortcuts settings section`}};function m(e){let t=(0,u.c)(17),{slug:r}=e;switch(r){case`keyboard-shortcuts`:{let e;return t[1]===Symbol.for(`react.memo_cache_sentinel`)?(e=(0,d.jsx)(n,{id:`settings.section.keyboard-shortcuts`,defaultMessage:`Keyboard shortcuts`,description:`Title for keyboard shortcuts settings section`}),t[1]=e):e=t[1],e}case`general-settings`:{let e;return t[2]===Symbol.for(`react.memo_cache_sentinel`)?(e=(0,d.jsx)(n,{id:`settings.section.general-settings`,defaultMessage:`General`,description:`Title for general settings section`}),t[2]=e):e=t[2],e}}}
 JS
     cat > "$extracted/webview/assets/index-test.js" <<'JS'
-var Xge={"general-settings":xh,"keyboard-shortcuts":ks,appearance:Pf,agent:gU},H7={},Zge=[`general-settings`,`profile`,`keyboard-shortcuts`,`appearance`,`agent`,`personalization`,`mcp-settings`,`connections`,`git-settings`,`local-environments`,`worktrees`,`browser-use`,`computer-use`,`data-controls`],Qge=[{key:`app`,heading:H7.appHeading,slugs:[`general-settings`,`profile`,`keyboard-shortcuts`,`appearance`,`connections`,`git-settings`,`usage`]}];function n_e(){let e=e=>{switch(e.slug){case`general-settings`:case`agent`:case`personalization`:return!0;case`keyboard-shortcuts`:return!0}};if(O)bb0:switch(D.slug){case`usage`:k=g;break bb0;case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`account`:case`data-controls`:case`personalization`:k=!1;break bb0;case`keyboard-shortcuts`:k=!1;break bb0;}}function s_e(e){let{slug:n}=e,r=c_e[n];return (0,$.jsx)(r,{})}var c_e={"general-settings":Z(async()=>(await s(async()=>{let{GeneralSettings:e}=await import(`./general-settings-DZbwMmWz.js`);return{GeneralSettings:e}},[],import.meta.url)).GeneralSettings),"keyboard-shortcuts":Z(async()=>(await s(async()=>{let{KeyboardShortcutsSettings:e}=await import(`./keyboard-shortcuts-settings-test.js`);return{KeyboardShortcutsSettings:e}},[],import.meta.url)).KeyboardShortcutsSettings)};
+import{n as routeModule,s as routeToESM}from"./rolldown-runtime-test.js";import{I as routeJsxFactory,R as routeReactFactory}from"./shared-runtime-test.js";function Z(e){let r=(0,RouteReact.lazy)(e);function SettingsRouteWrapper(){let t=(0,RouteReact.useState)(null);return (0,RouteJsx.jsx)(r,{children:t})}return SettingsRouteWrapper}var RouteReact,RouteJsx;routeModule(()=>{RouteReact=routeToESM(routeReactFactory(),1),RouteJsx=routeJsxFactory()})();var Xge={"general-settings":xh,"keyboard-shortcuts":ks,appearance:Pf,agent:gU},H7={},Zge=[`general-settings`,`profile`,`keyboard-shortcuts`,`appearance`,`agent`,`personalization`,`mcp-settings`,`connections`,`git-settings`,`local-environments`,`worktrees`,`browser-use`,`computer-use`,`data-controls`],Qge=[{key:`app`,heading:H7.appHeading,slugs:[`general-settings`,`profile`,`keyboard-shortcuts`,`appearance`,`connections`,`git-settings`,`usage`]}];function n_e(){let e=e=>{switch(e.slug){case`general-settings`:case`agent`:case`personalization`:return!0;case`keyboard-shortcuts`:return!0}};if(O)bb0:switch(D.slug){case`usage`:k=g;break bb0;case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`account`:case`data-controls`:case`personalization`:k=!1;break bb0;case`keyboard-shortcuts`:k=!1;break bb0;}}function s_e(e){let{slug:n}=e,r=c_e[n];return (0,$.jsx)(r,{})}var c_e={"general-settings":Z(async()=>(await s(async()=>{let{GeneralSettings:e}=await import(`./general-settings-DZbwMmWz.js`);return{GeneralSettings:e}},[],import.meta.url)).GeneralSettings),"keyboard-shortcuts":Z(async()=>(await s(async()=>{let{KeyboardShortcutsSettings:e}=await import(`./keyboard-shortcuts-settings-test.js`);return{KeyboardShortcutsSettings:e}},[],import.meta.url)).KeyboardShortcutsSettings)};
 JS
     cat > "$extracted/webview/assets/keyboard-shortcuts-settings-test.js" <<'JS'
-slug:`keyboard-shortcuts`;export default function KeyboardShortcutsSettings(){}
+import{s as __toESM}from"./chunk-test.js";import{t as __reactFactory}from"./react-test.js";import{t as __jsxFactory}from"./jsx-runtime-test.js";function KeyboardShortcutsSettings(){let t=(0,React.useState)(null);return (0,$.jsx)(`div`,{children:t})}var React,$;initialize(()=>{React=__toESM(__reactFactory(),1),$=__jsxFactory()})();slug:`keyboard-shortcuts`;export{KeyboardShortcutsSettings};
 JS
 
     node "$REPO_DIR/scripts/patch-linux-window-ui.js" "$extracted" >"$output_log" 2>&1
@@ -7743,6 +7961,9 @@ JS
     assert_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" "codex-linux-warm-start-enabled"
     assert_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" "codex-linux-prompt-window-enabled"
     assert_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" 'import{t as Toggle}from"./linux-settings-toggle-linux.js"'
+    assert_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" 'import{codexLinuxReact as React,codexLinuxJsx as $}from"./index-test.js"'
+    assert_not_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" "__reactFactory"
+    assert_not_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" "__jsxFactory"
     assert_not_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" "function LinuxSwitch"
     assert_not_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" "bg-token-text-primary"
     assert_not_contains "$extracted/webview/assets/linux-desktop-settings-linux.js" "translate-x-4"
@@ -7750,6 +7971,7 @@ JS
     assert_contains "$extracted/webview/assets/settings-shared-test.js" "settings.nav.linux-desktop"
     assert_contains "$extracted/webview/assets/settings-shared-test.js" "settings.section.linux-desktop"
     assert_contains "$extracted/webview/assets/index-test.js" "linux-desktop-settings-linux.js"
+    assert_contains "$extracted/webview/assets/index-test.js" 'export{RouteReact as codexLinuxReact,RouteJsx as codexLinuxJsx}'
     assert_contains "$extracted/webview/assets/index-test.js" '"linux-desktop":'
     assert_contains "$extracted/webview/assets/index-test.js" 'Zge=\[`general-settings`,`linux-desktop`'
     assert_contains "$extracted/webview/assets/index-test.js" 'slugs:\[`general-settings`,`linux-desktop`'
@@ -7774,7 +7996,7 @@ test_keybinds_settings_patch_warns_on_bundle_shape_miss() {
     make_fake_extracted_asar "$extracted" 'let D={removeMenu(){},setMenuBarVisibility(){},setIcon(){},once(){}};let t={join(){}};let a={existsSync(){return true},statSync(){return {isFile(){return false}}}};let n={shell:{openPath(){return ""},showItemInFolder(){}}};...process.platform===`win32`?{autoHideMenuBar:!0}:{},process.platform===`win32`&&D.removeMenu(),foo)}),D.once(`ready-to-show`,()=>{var sa=Mi({id:`fileManager`,label:`Finder`,icon:`apps/finder.png`,kind:`fileManager`,darwin:{detect:()=>`open`,args:e=>ai(e)},win32:{label:`File Explorer`,icon:`apps/file-explorer.png`,detect:ca,args:e=>ai(e),open:async({path:e})=>la(e)}});function ca(){let e=1;return e}async function la(e){let t=ua(e);if(t&&(0,a.statSync)(t).isFile()){n.shell.showItemInFolder(t);return}let r=t??e,i=await n.shell.openPath(r);if(i)throw Error(i)}function ua(e){return e}var Ua=Mi({id:`systemDefault`,label:`System Default App`,icon:`apps/file-explorer.png`,kind:`systemDefault`,hidden:!0,darwin:{icon:`apps/finder.png`,detect:()=>`system-default`,iconPath:()=>null,args:e=>[e],open:async({path:e})=>Wa(e)},win32:{detect:()=>`system-default`,iconPath:()=>null,args:e=>[e],open:async({path:e})=>Wa(e)},linux:{detect:()=>`system-default`,iconPath:()=>null,args:e=>[e],open:async({path:e})=>Wa(e)}});async function Wa(e){return e}'
     rm "$extracted/webview/assets/settings-row-test.js"
     cat > "$extracted/webview/assets/keyboard-shortcuts-settings-test.js" <<'JS'
-slug:`keyboard-shortcuts`;export default function KeyboardShortcutsSettings(){}
+import{s as __toESM}from"./chunk-test.js";import{t as __reactFactory}from"./react-test.js";import{t as __jsxFactory}from"./jsx-runtime-test.js";function KeyboardShortcutsSettings(){let t=(0,React.useState)(null);return (0,$.jsx)(`div`,{children:t})}var React,$;initialize(()=>{React=__toESM(__reactFactory(),1),$=__jsxFactory()})();slug:`keyboard-shortcuts`;export{KeyboardShortcutsSettings};
 JS
     cat > "$extracted/webview/assets/settings-sections-test.js" <<'JS'
 var e=[`general-settings`,`profile`,`keyboard-shortcuts`],t=`general-settings`,n=[{slug:`general-settings`},{slug:`keyboard-shortcuts`}];
@@ -9370,6 +9592,7 @@ main() {
     test_fresh_pinned_dmg_preserves_cached_dmg_metadata
     test_fresh_reuse_dmg_uses_cache_when_metadata_matches
     test_rebuild_candidate_uses_validated_default_dmg
+    test_make_rebuild_targets_omit_empty_dmg_argument
     test_candidate_install_is_transactional
     test_candidate_promotion_refuses_a_running_final_app
     test_candidate_backup_retention_is_bounded
@@ -9412,6 +9635,9 @@ main() {
     test_update_nix_hashes_skips_unchanged_package_verification
     test_update_nix_hashes_verifies_changed_pins
     test_update_nix_hashes_verifies_changed_dmg_hash
+    test_update_nix_hashes_supports_focused_verification_output
+    test_update_nix_hashes_skips_output_build_when_refresh_ref_already_matches
+    test_ci_local_mounts_shared_git_metadata_for_linked_worktrees
     test_installer_detects_electron_version_from_plist
     test_installer_keeps_electron_fallback_for_bad_metadata
     test_port_validation_rejects_oversized_numeric_values

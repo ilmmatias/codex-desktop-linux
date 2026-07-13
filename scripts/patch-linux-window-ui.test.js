@@ -1210,7 +1210,7 @@ function trayBundleFixture() {
     "async function Hw(e){return process.platform!==`win32`&&process.platform!==`darwin`?null:(zw=!0,Lw??Rw??(Rw=(async()=>{let r=await Ww(e.buildFlavor,e.appBrand,e.repoRoot),i=new n.Tray(r.defaultIcon);return i})()))}",
     "async function Ww(e,t,i){if(process.platform===`darwin`){return null}let r=K9(e,t,i);return r==null?{defaultIcon:await n.app.getFileIcon(process.execPath,{size:`small`}),chronicleRunningIcon:null}:{defaultIcon:r,chronicleRunningIcon:null}}",
     "function K9(e,t,r){let a=[(0,i.join)(r,`electron`,`src`,`icons`,`tray.png`)];for(let e of a){let t=n.nativeImage.createFromPath(e);if(!t.isEmpty())return t}return null}",
-    "var pb=class{trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};constructor(){this.tray={on(){},setContextMenu(){},popUpContextMenu(){}};this.onTrayButtonClick=()=>{};this.tray.on(`click`,()=>{this.onTrayButtonClick()}),this.tray.on(`right-click`,()=>{this.openNativeTrayMenu()})}async handleMessage(e){switch(e.type){case`tray-menu-threads-changed`:this.trayMenuThreads=e.trayMenuThreads;return}}openNativeTrayMenu(){this.updateChronicleTrayIcon();let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems());e.once(`menu-will-show`,()=>{this.isNativeTrayMenuOpen=!0}),e.once(`menu-will-close`,()=>{this.isNativeTrayMenuOpen=!1,this.handleNativeTrayMenuClosed()}),this.tray.popUpContextMenu(e)}updateChronicleTrayIcon(){}getNativeTrayMenuItems(){return[]}}",
+    "var pb=class{nativeTrayClickSuppressionReason=null;clearNativeTrayClickSuppressionTimeout=null;chronicleTrayIconRefreshInterval=null;chronicleTrayIconState=`default`;isNativeTrayMenuOpen=!1;trayMenuThreads={runningThreads:[],unreadThreads:[],pinnedThreads:[],recentThreads:[],usageLimits:[]};constructor(){this.tray={on(){},setContextMenu(){},popUpContextMenu(){}};this.onTrayButtonClick=()=>{};this.tray.on(`click`,()=>{this.onTrayButtonClick()}),this.tray.on(`right-click`,()=>{this.openNativeTrayMenu()})}async handleMessage(e){switch(e.type){case`tray-menu-threads-changed`:this.trayMenuThreads=e.trayMenuThreads;return}}openNativeTrayMenu(){this.updateChronicleTrayIcon();let e=n.Menu.buildFromTemplate(this.getNativeTrayMenuItems());e.once(`menu-will-show`,()=>{this.isNativeTrayMenuOpen=!0}),e.once(`menu-will-close`,()=>{this.isNativeTrayMenuOpen=!1,this.handleNativeTrayMenuClosed()}),this.tray.popUpContextMenu(e)}updateChronicleTrayIcon(){}getNativeTrayMenuItems(){return[]}}",
     "v&&k.on(`close`,e=>{this.persistPrimaryWindowBounds(k);let t=this.getPrimaryWindows().some(e=>e!==k);if(process.platform===`win32`&&!this.isAppQuitting&&this.options.canHideLastWindowToTray?.()===!0&&!t){e.preventDefault(),k.hide();return}if(process.platform===`darwin`&&!this.isAppQuitting&&!t){e.preventDefault(),k.hide()}});",
     "let oe=async()=>{O=!0;try{await Hw({appBrand:a.U(),buildFlavor:b,repoRoot:j.repoRoot})}catch(e){O=!1,v.reportNonFatal(e instanceof Error?e:`Failed to set up tray`,{kind:`tray-setup-failed`,tags:{errorType:`tray-setup-failed`}}),N.ensureWindow()}};E&&oe();",
   ].join("");
@@ -1451,12 +1451,17 @@ function runSettingsPersistence(patchedSource, env, key, value) {
 
 function keybindsIndexBundleFixture() {
   return [
+    'import{n as routeModule,s as routeToESM}from"./rolldown-runtime-A.js";',
+    'import{I as routeJsxFactory,R as routeReactFactory}from"./shared-runtime-A.js";',
+    "function Z(e){let r=(0,RouteReact.lazy)(e);function SettingsRouteWrapper(){let t=(0,RouteReact.useState)(null);return (0,RouteJsx.jsx)(r,{children:t})}return SettingsRouteWrapper}",
+    "var RouteReact,RouteJsx;routeModule(()=>{RouteReact=routeToESM(routeReactFactory(),1),RouteJsx=routeJsxFactory()})();",
     "var Kge={\"general-settings\":xh,appearance:Pf,\"git-settings\":t1};",
     "var i_e={\"general-settings\":Z(async()=>(await s(async()=>{let{GeneralSettings:e}=await import(`./general-settings-DsLl9t6Z.js`);return{GeneralSettings:e}},[],import.meta.url)).GeneralSettings),appearance:Z(async()=>(await s(async()=>{let{Appearance:e}=await import(`./appearance.js`);return{Appearance:e}},[],import.meta.url)).Appearance)};",
     "qge=[`general-settings`,`appearance`,`connections`,`git-settings`,`usage`];",
     "Jge=[{key:`app`,heading:H7.appHeading,slugs:[`general-settings`,`appearance`,`connections`,`git-settings`,`usage`]}];",
     "switch(e){case`appearance`:case`git-settings`:case`worktrees`:case`local-environments`:case`data-controls`:case`environments`:return l===`electron`;}",
     "switch(e){case`usage`:k=g;break bb0;case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`account`:case`data-controls`:case`personalization`:k=!1;break bb0;}",
+    "export{SettingsRouteWrapper};",
   ].join("");
 }
 
@@ -1480,11 +1485,16 @@ function settingsSharedBundleWithDriftingJsxAliasFixture() {
 
 function linuxDesktopRouteBundleFixture() {
   return [
+    'import{n as routeModule,s as routeToESM}from"./rolldown-runtime-A.js";',
+    'import{I as routeJsxFactory,R as routeReactFactory}from"./shared-runtime-A.js";',
+    "function $(e){let r=(0,RouteReact.lazy)(e);function SettingsRouteWrapper(){let t=(0,RouteReact.useState)(null);return (0,RouteJsx.jsx)(r,{children:t})}return SettingsRouteWrapper}",
+    "var RouteReact,RouteJsx;routeModule(()=>{RouteReact=routeToESM(routeReactFactory(),1),RouteJsx=routeJsxFactory()})();",
     "var DE={",
     '"general-settings":$(async()=>(await Xr(async()=>{let{GeneralSettings:e}=await import(`./general-settings-A.js`);return{GeneralSettings:e}},[],import.meta.url)).GeneralSettings),',
     "profile:$(async()=>(await Xr(async()=>{let{Profile:e}=await import(`./profile-A.js`);return{Profile:e}},[],import.meta.url)).Profile),",
     '"keyboard-shortcuts":$(async()=>(await Xr(async()=>{let{KeyboardShortcutsSettings:e}=await import(`./keyboard-shortcuts-settings-A.js`);return{KeyboardShortcutsSettings:e}},[],import.meta.url)).KeyboardShortcutsSettings)',
     "};",
+    "export{SettingsRouteWrapper};",
   ].join("");
 }
 
@@ -1496,48 +1506,6 @@ function linuxDesktopNavigationBundleFixture() {
     "function visible(e){switch(e.slug){case`appearance`:return!0;case`general-settings`:case`agent`:case`personalization`:return!0;case`keyboard-shortcuts`:return!0}}",
     "function loading(H){let W=!1;if(H)bb0:switch(H.slug){case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`data-controls`:case`personalization`:W=!1;break bb0;case`keyboard-shortcuts`:W=!1;break bb0}return W}",
   ].join("");
-}
-
-function createNativeKeyboardShortcutsSettingsFixture() {
-  const extractedDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-native-shortcuts-"));
-  const assetsDir = path.join(extractedDir, "webview", "assets");
-  fs.mkdirSync(assetsDir, { recursive: true });
-
-  const writeAsset = (name, source = "") => {
-    fs.writeFileSync(path.join(assetsDir, name), source, "utf8");
-  };
-
-  writeAsset("chunk-A.js", "");
-  writeAsset(
-    "jsx-runtime-A.js",
-    'import{s as s}from"./chunk-A.js";function n(){return{}}function t(){return{jsx(){},jsxs(){},Fragment:"Fragment"}}react.transitional.element;export{n,t};',
-  );
-  writeAsset(
-    "shared-app-A.js",
-    'function requestCodex(...args){let[method,request]=args,{params:params,select:select,signal:signal,source:source}=request??{};return rawCodex(method,params,select,signal,source)}async function rawCodex(method,params,select,signal,source){let result=(await transport.post(`vscode://codex/${method}`,JSON.stringify(params),headers(source),signal)).body;return select?select(result):result}export{requestCodex as z};',
-  );
-  writeAsset("general-settings-A.js", "hotkey-window-hotkey-state");
-  writeAsset(
-    "toggle-A.js",
-    'function t({checked,disabled,onChange,ariaLabel}){return {role:"switch","aria-checked":checked,"aria-label":ariaLabel,disabled,onClick:()=>onChange(!checked)}}export{t};',
-  );
-  writeAsset(
-    "settings-row-A.js",
-    "function a(e){let{label:t,description:n,control:r}=e;return null}function s(e){let{label:t,children:n}=e;return null}export{s as n,a as r};",
-  );
-  writeAsset("settings-content-layout-A.js", "export{n,r,t};");
-  writeAsset("settings-group-A.js", "export{n,t};");
-  writeAsset("settings-surface-A.js", "export{t};");
-  writeAsset(
-    "settings-sections-A.js",
-    "var e=`general-settings`,t=`mcp-settings`,n=[{slug:e},{slug:`appearance`},{slug:`keyboard-shortcuts`}];",
-  );
-  writeAsset("settings-shared-A.js", settingsSharedBundleFixture());
-  writeAsset("app-main-A.js", linuxDesktopRouteBundleFixture());
-  writeAsset("settings-page-A.js", linuxDesktopNavigationBundleFixture());
-  writeAsset("keyboard-shortcuts-settings-A.js", "export default function KeyboardShortcutsSettings(){}");
-
-  return { extractedDir, assetsDir };
 }
 
 function createModernNativeKeyboardShortcutsSettingsFixture() {
@@ -1582,12 +1550,20 @@ function createModernNativeKeyboardShortcutsSettingsFixture() {
   writeAsset(
     "settings-page-A.js",
     [
+      'import{n as routeModule,s as routeToESM}from"./rolldown-runtime-A.js";',
+      'import{I as routeJsxFactory,R as routeReactFactory}from"./shared-runtime-A.js";',
+      "function DecoyState(){let t=(0,DecoyReact.useState)(null);return t}",
+      "function DecoyView(){return (0,DecoyJsx.jsx)(`div`,{})}",
+      "var DecoyReact,DecoyJsx;routeModule(()=>{DecoyReact=routeToESM(routeReactFactory(),1)});routeModule(()=>{DecoyJsx=routeJsxFactory()})();",
+      "function Ya(e){let r=(0,RouteReact.lazy)(e);function SettingsRouteWrapper(){let t=(0,RouteReact.useState)(null);return (0,RouteJsx.jsx)(r,{children:t})}return SettingsRouteWrapper}",
+      "var RouteReact,RouteJsx;routeModule(()=>{RouteReact=routeToESM(routeReactFactory(),1),RouteJsx=routeJsxFactory()})();",
       'var Zn={"general-settings":Ya(async()=>(await Pr(async()=>{let{GeneralSettings:e}=await import(`./general-settings-A.js`);return{GeneralSettings:e}},[],import.meta.url)).GeneralSettings),"keyboard-shortcuts":Ya(async()=>(await Pr(async()=>{let{KeyboardShortcutsSettings:e}=await import(`./keyboard-shortcuts-settings-A.js`);return{KeyboardShortcutsSettings:e}},[],import.meta.url)).KeyboardShortcutsSettings)};',
       'var Hn={"general-settings":wt,"keyboard-shortcuts":xn};',
       "var Wn=[`general-settings`,`profile`,`keyboard-shortcuts`];",
       "var Qn=[{key:`app`,slugs:[`general-settings`,`profile`,`keyboard-shortcuts`]}];",
       "function visible(e){switch(e.slug){case`general-settings`:case`agent`:case`personalization`:return!0;case`keyboard-shortcuts`:return!0}}",
       "function loading(H){let W=!1;if(H)bb0:switch(H.slug){case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`data-controls`:case`personalization`:W=!1;break bb0;case`keyboard-shortcuts`:W=!1;break bb0}return W}",
+      "export{SettingsRouteWrapper};",
     ].join(""),
   );
   writeAsset(
@@ -1698,10 +1674,15 @@ function createSplitRouteNativeKeyboardShortcutsSettingsFixture({
   writeAsset(
     routeChunkName,
     [
+      'import{n as routeModule,s as routeToESM}from"./rolldown-runtime-A.js";',
+      'import{I as routeJsxFactory,R as routeReactFactory}from"./shared-runtime-A.js";',
+      "function Ya(e){let r=(0,RouteReact.lazy)(e);function SettingsRouteWrapper(){let t=(0,RouteReact.useState)(null);return (0,RouteJsx.jsx)(r,{children:t})}return SettingsRouteWrapper}",
+      "var RouteReact,RouteJsx;routeModule(()=>{RouteReact=routeToESM(routeReactFactory(),1),RouteJsx=routeJsxFactory()})();",
       "var Bn,Ya,Pr,FW,Xn=e((()=>{Bn=s(),Ya=t(f(),1),Pr=o(),",
       'FW={"general-settings":Ya(async()=>(await Pr(async()=>{let{GeneralSettings:e}=await import(`./general-settings-A.js`);return{GeneralSettings:e}},[],import.meta.url)).GeneralSettings),',
       '"keyboard-shortcuts":Ya(async()=>(await Pr(async()=>{let{KeyboardShortcutsSettings:e}=await import(`./keyboard-shortcuts-settings-A.js`);return{KeyboardShortcutsSettings:e}},[],import.meta.url)).KeyboardShortcutsSettings)}',
       "}));",
+      "export{SettingsRouteWrapper};",
     ].join(""),
   );
   writeAsset(
@@ -3659,7 +3640,11 @@ test("adds Linux tray support including the platform guard", () => {
   assert.match(patched, /setLinuxTrayContextMenu\(\)\{let e=n\.Menu\.buildFromTemplate/);
   assert.match(
     patched,
-    /process\.platform===`linux`&&this\.setLinuxTrayContextMenu\(\),this\.tray\.on\(`click`/,
+    /process\.platform===`linux`&&\(codexLinuxSetTrayController\(this\),this\.setLinuxTrayContextMenu\(\)\),this\.tray\.on\(`click`/,
+  );
+  assert.match(
+    patched,
+    /codexLinuxTrayRecoveryHandler=\(\)=>\{let e=codexLinuxTrayController;e\?\.setLinuxTrayContextMenu\?\.\(\)\}/,
   );
   assert.match(
     patched,
@@ -3675,6 +3660,111 @@ test("adds Linux tray support including the platform guard", () => {
     /\(E\|\|process\.platform===`linux`&&\(typeof codexLinuxIsTrayEnabled!==`function`\|\|codexLinuxIsTrayEnabled\(\)\)\)&&oe\(\);/,
   );
   assert.doesNotMatch(patched, /process\.platform===`linux`&&codexLinuxIsTrayEnabled\(\)/);
+});
+
+test("refreshes only the live Linux tray controller after session recovery", () => {
+  const source = `${mainBundlePrefix}${trayBundleFixture()
+    .replace(
+      "this.tray={on(){},setContextMenu(){},popUpContextMenu(){}}",
+      "this.tray=globalThis.createTray()",
+    )
+    .replace("}}v&&", "}};v&&")
+    .replace(";E&&oe();", ";")}`;
+  const patched = applyPatchTwice(applyLinuxTrayPatch, source, null);
+  const powerMonitor = new EventEmitter();
+  const app = new EventEmitter();
+  const trays = [];
+  const context = {
+    E: false,
+    v: false,
+    e: { o: (value) => value },
+    process: { platform: "linux", resourcesPath: "", execPath: "" },
+    require: (name) => {
+      if (name !== "electron") {
+        return {};
+      }
+      return {
+        app,
+        powerMonitor,
+        Menu: { buildFromTemplate: () => ({}) },
+      };
+    },
+    createTray: () => {
+      const tray = {
+        destroyed: false,
+        menuSetCount: 0,
+        on() {},
+        setContextMenu() {
+          if (this.destroyed) {
+            throw new Error("destroyed tray");
+          }
+          this.menuSetCount += 1;
+        },
+        popUpContextMenu() {},
+        destroy() {
+          this.destroyed = true;
+        },
+      };
+      trays.push(tray);
+      return tray;
+    },
+  };
+
+  vm.runInNewContext(`${patched};globalThis.TrayController=pb;`, context);
+  assert.equal(powerMonitor.listenerCount("unlock-screen"), 0);
+  assert.equal(powerMonitor.listenerCount("resume"), 0);
+  const firstController = new context.TrayController();
+  assert.equal(powerMonitor.listenerCount("unlock-screen"), 1);
+  assert.equal(powerMonitor.listenerCount("resume"), 1);
+  const firstTray = trays[0];
+  firstTray.destroy();
+  const liveController = new context.TrayController();
+  const liveTray = trays[1];
+
+  assert.doesNotThrow(() => {
+    powerMonitor.emit("unlock-screen");
+    powerMonitor.emit("resume");
+  });
+  assert.equal(firstTray.menuSetCount, 1);
+  assert.equal(liveTray.menuSetCount, 3);
+
+  app.emit("before-quit");
+  powerMonitor.emit("unlock-screen");
+  assert.equal(liveTray.menuSetCount, 4);
+  assert.equal(powerMonitor.listenerCount("unlock-screen"), 1);
+  assert.equal(powerMonitor.listenerCount("resume"), 1);
+
+  app.emit("will-quit");
+  powerMonitor.emit("unlock-screen");
+  assert.equal(liveTray.menuSetCount, 4);
+  assert.equal(powerMonitor.listenerCount("unlock-screen"), 0);
+  assert.equal(powerMonitor.listenerCount("resume"), 0);
+  assert.ok(firstController);
+  assert.ok(liveController);
+});
+
+test("keeps Linux tray setup fail-soft when recovery helper insertion drifts", () => {
+  const source = `${mainBundlePrefix}${trayBundleFixture().replace(
+    "var pb=class{nativeTrayClickSuppressionReason=",
+    "var pb=class extends globalThis.TrayBase{nativeTrayClickSuppressionReason=",
+  )}`;
+
+  const { value: patched, warnings } = captureWarns(() =>
+    applyPatchTwice(applyLinuxTrayPatch, source, null),
+  );
+
+  assert.ok(
+    warnings.includes(
+      "WARN: Could not find tray controller class — skipping Linux tray power-monitor refresh patch",
+    ),
+  );
+  assert.match(patched, /setLinuxTrayContextMenu\(\)\{/);
+  assert.match(
+    patched,
+    /process\.platform===`linux`&&this\.setLinuxTrayContextMenu\(\),this\.tray\.on\(`click`/,
+  );
+  assert.doesNotMatch(patched, /codexLinuxSetTrayController\(this\)/);
+  assert.doesNotMatch(patched, /codexLinuxTrayRecoveryHandler=/);
 });
 
 test("uses collision-proof Linux tray icon variables when Electron alias is r", () => {
@@ -4942,92 +5032,6 @@ test("fails loudly when current Codex request API asset detection is ambiguous",
   }
 });
 
-test("keeps Linux desktop toggles visible with native Keyboard Shortcuts", () => {
-  const { extractedDir, assetsDir } = createNativeKeyboardShortcutsSettingsFixture();
-  try {
-    const result = patchKeybindsSettingsAssets(extractedDir);
-
-    assert.equal(result.matched, true);
-    assert.ok(result.changed >= 4);
-    assert.match(result.reason, /upstream keyboard shortcuts settings are present/);
-    assert.equal(fs.existsSync(path.join(assetsDir, keybindsSettingsAsset)), false);
-    assert.equal(fs.existsSync(path.join(assetsDir, linuxDesktopSettingsAsset)), true);
-
-    const linuxDesktopSource = fs.readFileSync(
-      path.join(assetsDir, linuxDesktopSettingsAsset),
-      "utf8",
-    );
-    assert.match(linuxDesktopSource, /Linux desktop/);
-    assert.match(linuxDesktopSource, /Compact prompt window/);
-    assert.match(linuxDesktopSource, /System tray/);
-    assert.match(linuxDesktopSource, /Warm start/);
-    assert.match(linuxDesktopSource, /Install updates when you close ChatGPT/);
-    assert.match(linuxDesktopSource, /Build information/);
-    assert.match(linuxDesktopSource, /Linux source commit/);
-    assert.match(linuxDesktopSource, /Copy commit/);
-    assert.match(linuxDesktopSource, /Open on GitHub/);
-    assert.match(linuxDesktopSource, /"Linux source commit":\[\{key:"copyCommit"/);
-    assert.match(linuxDesktopSource, /"Generated":\[\{key:"refresh"/);
-    assert.match(linuxDesktopSource, /"Metadata file":\[\{key:"details"/);
-    assert.match(linuxDesktopSource, /control:null/);
-    assert.match(linuxDesktopSource, /cursor-pointer/);
-    assert.match(linuxDesktopSource, /disabled:cursor-not-allowed/);
-    assert.doesNotMatch(
-      linuxDesktopSource,
-      /control:\$\.jsxs\("div",\{className:"flex flex-wrap items-center justify-end gap-2"/,
-    );
-    assert.doesNotMatch(linuxDesktopSource, /Source commit URL/);
-    assert.match(linuxDesktopSource, /href:url/);
-    assert.match(linuxDesktopSource, /codex-linux-get-build-info/);
-    assert.match(linuxDesktopSource, /codex-linux-system-tray-enabled/);
-    assert.match(linuxDesktopSource, /codex-linux-auto-update-on-exit/);
-    assert.match(linuxDesktopSource, /import\{r as SettingsRow\}from"\.\/settings-row-A\.js"/);
-    assert.match(linuxDesktopSource, /import\{z as __post\}from"\.\/shared-app-A\.js"/);
-    assert.equal(fs.existsSync(path.join(assetsDir, "linux-settings-toggle-linux.js")), true);
-    assert.match(
-      linuxDesktopSource,
-      /import\{t as Toggle\}from"\.\/linux-settings-toggle-linux\.js"/,
-    );
-    assert.doesNotMatch(linuxDesktopSource, /React\.use(State|Effect|Callback)/);
-    assert.doesNotMatch(linuxDesktopSource, /function useLinuxSetting/);
-    assert.match(linuxDesktopSource, /class LinuxToggle extends React\.Component/);
-    assert.match(linuxDesktopSource, /class LinuxBuildInfoPanel extends React\.Component/);
-    assert.match(
-      linuxDesktopSource,
-      /control:\$\.jsx\(Toggle,\{checked:value,disabled:isLoading,onChange:this\.update,ariaLabel:label\}\)/,
-    );
-    assert.doesNotMatch(linuxDesktopSource, /function LinuxSwitch/);
-    assert.doesNotMatch(linuxDesktopSource, /bg-token-text-primary/);
-    assert.doesNotMatch(linuxDesktopSource, /translate-x-4/);
-
-    assert.match(
-      fs.readFileSync(path.join(assetsDir, "settings-sections-A.js"), "utf8"),
-      /slug:`linux-desktop`/,
-    );
-    assert.match(
-      fs.readFileSync(path.join(assetsDir, "settings-shared-A.js"), "utf8"),
-      /settings\.nav\.linux-desktop/,
-    );
-    const appMainSource = fs.readFileSync(path.join(assetsDir, "app-main-A.js"), "utf8");
-    assert.match(appMainSource, /linux-desktop-settings-linux\.js/);
-    assert.doesNotMatch(appMainSource, /keybinds-settings-linux\.js/);
-    const settingsPageSource = fs.readFileSync(path.join(assetsDir, "settings-page-A.js"), "utf8");
-    // The navigation bundle owns the icon map: linux-desktop must reuse the
-    // general-settings icon, never the lazy page component (the route lives in
-    // app-main-A.js). Injecting the page component here renders a broken nav icon.
-    assert.match(settingsPageSource, /"linux-desktop":q,"general-settings":q/);
-    assert.doesNotMatch(settingsPageSource, /"linux-desktop":codexLinuxDesktopSettings/);
-    assert.match(settingsPageSource, /slugs:\[`general-settings`,`linux-desktop`,`profile`/);
-    assert.match(settingsPageSource, /case`linux-desktop`:case`general-settings`/);
-
-    const secondResult = patchKeybindsSettingsAssets(extractedDir);
-    assert.equal(secondResult.matched, true);
-    assert.equal(secondResult.changed, 0);
-  } finally {
-    fs.rmSync(extractedDir, { recursive: true, force: true });
-  }
-});
-
 test("renders the generated Linux desktop settings page with working switches", () => {
   const { extractedDir, assetsDir } = createModernNativeKeyboardShortcutsSettingsFixture();
   try {
@@ -5051,9 +5055,24 @@ test("renders the generated Linux desktop settings page with working switches", 
       jsxs: (type, props = {}) => ({ type, props }),
     };
     const React = { Component, Fragment: "fragment" };
+    const routeSettingsSource = fs.readFileSync(
+      path.join(assetsDir, "settings-page-A.js"),
+      "utf8",
+    );
+    assert.match(
+      routeSettingsSource,
+      /RouteReact as codexLinuxReact,RouteJsx as codexLinuxJsx/,
+    );
+    assert.doesNotMatch(
+      routeSettingsSource,
+      /DecoyReact as codexLinuxReact|DecoyJsx as codexLinuxJsx/,
+    );
+    const nativeRuntime = { React, $: jsxRuntime };
+    assert.equal(nativeRuntime.React, React);
+    assert.equal(nativeRuntime.$, jsxRuntime);
     const Toggle = evaluateGeneratedSettingsModule(
       fs.readFileSync(path.join(assetsDir, "linux-settings-toggle-linux.js"), "utf8"),
-      { __jsxFactory: () => jsxRuntime },
+      { $: nativeRuntime.$ },
       "t",
     );
     const SettingsPage = ({ title, subtitle, children }) =>
@@ -5067,16 +5086,14 @@ test("renders the generated Linux desktop settings page with working switches", 
     const LinuxDesktopSettings = evaluateGeneratedSettingsModule(
       fs.readFileSync(path.join(assetsDir, linuxDesktopSettingsAsset), "utf8"),
       {
-        React,
+        $: nativeRuntime.$,
+        React: nativeRuntime.React,
         SettingsGroup,
         SettingsPage,
         SettingsRow,
         SettingsSection,
         Toggle,
-        __jsxFactory: () => jsxRuntime,
         __post: () => Promise.resolve({}),
-        __reactFactory: () => React,
-        __toESM: (value) => value,
       },
       "LinuxDesktopSettings",
     );
@@ -5120,7 +5137,7 @@ test("renders the generated Linux desktop settings page with working switches", 
 });
 
 test("skips old Keybinds settings generation when native Keyboard Shortcuts are missing", () => {
-  const { extractedDir, assetsDir } = createNativeKeyboardShortcutsSettingsFixture();
+  const { extractedDir, assetsDir } = createModernNativeKeyboardShortcutsSettingsFixture();
   try {
     fs.rmSync(path.join(assetsDir, "keyboard-shortcuts-settings-A.js"));
 
@@ -5131,6 +5148,54 @@ test("skips old Keybinds settings generation when native Keyboard Shortcuts are 
     assert.ok(warnings.some((warning) => warning.includes("current upstream Keyboard Shortcuts settings route is missing")));
     assert.equal(fs.existsSync(path.join(assetsDir, keybindsSettingsAsset)), false);
     assert.equal(fs.existsSync(path.join(assetsDir, linuxDesktopSettingsAsset)), false);
+  } finally {
+    fs.rmSync(extractedDir, { recursive: true, force: true });
+  }
+});
+
+test("skips Linux settings without writing assets when the active route runtime cannot be inferred", () => {
+  const { extractedDir, assetsDir } = createModernNativeKeyboardShortcutsSettingsFixture();
+  try {
+    const nativeSettingsPath = path.join(assetsDir, "settings-page-A.js");
+    const nativeSettingsSource = fs.readFileSync(nativeSettingsPath, "utf8").replace(
+      "(0,RouteReact.useState)(null)",
+      "RouteReact.useState(null)",
+    );
+    fs.writeFileSync(nativeSettingsPath, nativeSettingsSource, "utf8");
+    const assetsBefore = new Map(
+      fs.readdirSync(assetsDir).map((name) => [
+        name,
+        fs.readFileSync(path.join(assetsDir, name), "utf8"),
+      ]),
+    );
+
+    const { value: result, warnings } = captureWarns(() => patchKeybindsSettingsAssets(extractedDir));
+
+    assert.equal(result.matched, false);
+    assert.equal(result.changed, 0);
+    assert.match(result.reason, /could not infer the active React runtime/);
+    assert.ok(warnings.some((warning) => warning.includes("could not infer the active React runtime")));
+    assert.deepEqual(
+      new Map(
+        fs.readdirSync(assetsDir).map((name) => [
+          name,
+          fs.readFileSync(path.join(assetsDir, name), "utf8"),
+        ]),
+      ),
+      assetsBefore,
+    );
+    assert.equal(fs.existsSync(path.join(assetsDir, linuxDesktopSettingsAsset)), false);
+    assert.equal(fs.existsSync(path.join(assetsDir, "linux-settings-toggle-linux.js")), false);
+
+    const report = createPatchReport();
+    captureWarns(() => patchExtractedApp(extractedDir, { report }));
+    const reportEntry = report.patches.find((patch) => patch.name === "keybinds-settings");
+    assert.equal(reportEntry.status, "skipped-optional");
+    assert.equal(reportEntry.ciPolicy, "optional");
+    assert.match(reportEntry.reason, /could not infer the active React runtime/);
+    assert.ok(
+      optionalDriftFromReport(report).some((drift) => drift.name === "keybinds-settings"),
+    );
   } finally {
     fs.rmSync(extractedDir, { recursive: true, force: true });
   }
@@ -5331,7 +5396,19 @@ test("adds Linux desktop settings when native shortcuts use a consolidated setti
     assert.match(linuxDesktopSource, /Open on GitHub/);
     assert.match(linuxDesktopSource, /href:url/);
     assert.doesNotMatch(linuxDesktopSource, /Source commit URL/);
-    assert.match(linuxDesktopSource, /import\{R as __reactFactory,I as __jsxFactory\}from"\.\/shared-runtime-A\.js"/);
+    assert.match(
+      linuxDesktopSource,
+      /import\{codexLinuxReact as React,codexLinuxJsx as \$\}from"\.\/settings-page-A\.js"/,
+    );
+    assert.doesNotMatch(linuxDesktopSource, /__reactFactory|__jsxFactory/);
+    const settingsRouteSource = fs.readFileSync(
+      path.join(assetsDir, "settings-page-A.js"),
+      "utf8",
+    );
+    assert.match(
+      settingsRouteSource,
+      /RouteReact as codexLinuxReact,RouteJsx as codexLinuxJsx/,
+    );
     assert.match(
       linuxDesktopSource,
       /import\{t as Toggle\}from"\.\/linux-settings-toggle-linux\.js"/,

@@ -40,6 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   bridge forwards the action and close signals that Electron's Linux
   notification backend does not expose, with the existing View-only Electron
   notification retained as a fail-soft fallback.
+- The opt-in `frameless-titlebar` feature now removes Electron-drawn window
+  controls from Quick Chat as well as the primary window, keeping compositor-
+  managed decoration behavior consistent across both window types.
 - Remote mobile cold starts now select one runtime owner deterministically.
   Explicit systemd user-service configuration takes precedence over the
   Desktop app-server and standalone fallback, while a versioned Desktop marker
