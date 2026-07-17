@@ -1,5 +1,6 @@
 "use strict";
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const {
@@ -21,6 +22,11 @@ const linuxDesktopSettingsAsset = "linux-desktop-settings-linux.js";
 const linuxKeybindOverridesKey = "codex-linux-keybind-overrides";
 const linuxReactRuntimeExport = "codexLinuxReact";
 const linuxJsxRuntimeExport = "codexLinuxJsx";
+
+function versionedAssetSpecifier(assetName, source) {
+  const digest = crypto.createHash("sha256").update(source).digest("hex").slice(0, 12);
+  return `${assetName}?v=${digest}`;
+}
 
 function linuxBuildInfoPanelSource() {
   return `function codexLinuxBuildInfoValue(value,fallback="unknown"){return typeof value=="string"&&value.trim().length>0?value:Array.isArray(value)&&value.length>0?value.join(", "):value==null?fallback:String(value)}function codexLinuxBuildInfoRows(payload){let info=payload?.info;if(!info)return [["Metadata file",codexLinuxBuildInfoValue(payload?.path,"not found")]];let target=info.linuxTarget??{},distro=target.distro??{},dmg=info.upstreamDmg??{},source=info.source??{},features=info.linuxFeatures?.enabled??[],profile=info.packageProfile??{},commit=source.commit||source.shortCommit||"",commitValue=commit?source.dirty?commit+" (dirty)":commit:"unknown",distroValue=distro.prettyName||[distro.id,distro.versionId].filter(Boolean).join(" ")||"unknown";return [["Metadata file",codexLinuxBuildInfoValue(payload?.path)],["Linux package profile",codexLinuxBuildInfoValue(profile.label)],["Linux source commit",commitValue,payload?.commitUrl],["Source branch",codexLinuxBuildInfoValue(source.branch)],["Generated",codexLinuxBuildInfoValue(info.generatedAt)],["Distro",distroValue],["Package manager",codexLinuxBuildInfoValue(target.packageManager??profile.packageManager)],["Package format",codexLinuxBuildInfoValue(target.packageFormat??profile.format)],["Enabled features",features.length>0?features.join(", "):"none"],["Upstream app version",codexLinuxBuildInfoValue(dmg.appVersion)],["Electron",codexLinuxBuildInfoValue(info.electronVersion)],["Upstream DMG SHA256",codexLinuxBuildInfoValue(dmg.sha256)]].filter(row=>row[1]!=null)}class LinuxBuildInfoPanel extends React.Component{constructor(props){super(props),this._alive=!1,this.state={data:null,isLoading:!0,error:null,copied:!1},this.load=this.load.bind(this),this.copyCommit=this.copyCommit.bind(this),this.openCommit=this.openCommit.bind(this),this.showDetails=this.showDetails.bind(this),this.fail=this.fail.bind(this)}componentDidMount(){this._alive=!0,this.load()}componentWillUnmount(){this._alive=!1}fail(err){this._alive&&this.setState({error:err instanceof Error?err.message:String(err)})}load(){this.setState({isLoading:!0,error:null}),__post("codex-linux-get-build-info",{}).then(result=>{this._alive&&this.setState({data:result})}).catch(this.fail).finally(()=>{this._alive&&this.setState({isLoading:!1})})}copyCommit(){let info=this.state.data?.info,commit=info?.source?.commit||"";commit&&(navigator.clipboard?.writeText?navigator.clipboard.writeText(commit).then(()=>{this._alive&&(this.setState({copied:!0}),setTimeout(()=>{this._alive&&this.setState({copied:!1})},1500))}).catch(this.fail):this.fail("Clipboard API is unavailable"))}openCommit(){(this.state.data?.commitUrl||"")&&__post("codex-linux-open-build-info-commit",{}).catch(this.fail)}showDetails(){__post("codex-linux-show-build-info",{}).catch(this.fail)}render(){let{data,isLoading,error,copied}=this.state,info=data?.info,commit=info?.source?.commit||"",commitUrl=data?.commitUrl||"",buttonClass="h-8 cursor-pointer rounded-md border border-token-border-default px-3 text-sm text-token-text-primary hover:bg-token-surface-secondary disabled:cursor-not-allowed disabled:opacity-60",rows=codexLinuxBuildInfoRows(data),actionsByLabel={"Metadata file":[{key:"details",label:"Details",disabled:!1,onClick:this.showDetails}],"Linux source commit":[{key:"copyCommit",label:"Copy commit",disabled:!commit,onClick:this.copyCommit},{key:"openCommit",label:"Open on GitHub",disabled:!commitUrl,onClick:this.openCommit}],"Generated":[{key:"refresh",label:"Refresh",disabled:isLoading,onClick:this.load}]},description=isLoading?$.jsx("span",{children:"Loading build metadata..."}):$.jsxs("div",{className:"flex flex-col gap-2 text-sm",children:[$.jsx("dl",{className:"grid gap-x-4 gap-y-3 rounded-md border border-token-border-default bg-token-bg-secondary p-3 sm:grid-cols-[150px_minmax(0,1fr)]",children:rows.map(([label,value,url])=>{let valueNode=url?$.jsx("a",{href:url,title:url,onClick:event=>{event.preventDefault(),this.openCommit()},className:"select-text break-all rounded bg-token-bg-primary px-1.5 py-0.5 font-mono text-xs text-token-text-primary underline decoration-token-text-tertiary underline-offset-2 hover:decoration-token-text-primary",children:value}):$.jsx("code",{className:"select-text break-all rounded bg-token-bg-primary px-1.5 py-0.5 font-mono text-xs text-token-text-primary",children:value}),actions=actionsByLabel[label]??[],rowContent=actions.length>0?$.jsxs("div",{className:"flex min-w-0 flex-col items-start gap-2",children:[valueNode,$.jsx("div",{className:"flex flex-wrap items-center gap-2",children:actions.map(action=>$.jsx("button",{type:"button",className:buttonClass,disabled:action.disabled,onClick:action.onClick,children:action.label},action.key))})]}):valueNode;return $.jsxs(React.Fragment,{children:[$.jsx("dt",{className:"text-token-text-tertiary",children:label}),$.jsx("dd",{className:"min-w-0",children:rowContent})]},label)})}),error?$.jsx("span",{className:"text-token-error-foreground",children:error}):null,copied?$.jsx("span",{className:"text-token-text-secondary",children:"Commit copied"}):null]});return $.jsx(SettingsRow,{label:"Build information",description,control:null})}}`;
@@ -384,27 +390,27 @@ function linuxSettingsFallbackComponents({ runtimeBridgeAsset }) {
     settingsRow: {
       assetName: "linux-settings-row-linux.js",
       exportName: "n",
-      source: `${jsxImport}function n({label,description,control}){return $.jsxs("div",{className:"flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between",children:[$.jsxs("div",{className:"min-w-0 flex-1",children:[$.jsx("div",{className:"text-sm font-medium text-token-text-primary",children:label}),$.jsx("div",{className:"mt-1 text-sm text-token-text-secondary",children:description})]}),$.jsx("div",{className:"shrink-0",children:control})]})}export{n};\n`,
+      source: `${jsxImport}function n({label,description,control}){let details=label!=null||description!=null;return $.jsxs("div",{className:"flex items-center justify-between gap-6 px-4 py-3",children:[details?$.jsx("div",{className:"flex min-w-0 flex-1 items-center gap-3",children:$.jsxs("div",{className:"flex min-w-0 flex-col gap-0.5",children:[$.jsx("div",{className:"min-w-0 text-sm font-medium text-token-text-primary",children:label}),description?$.jsx("div",{className:"min-w-0 text-xs leading-4 text-balance text-token-text-secondary",children:description}):null]})}):null,$.jsx("div",{className:"flex max-w-full shrink-0 items-center gap-2",children:control})]})}export{n};\n`,
     },
     settingsSection: {
       assetName: "linux-settings-section-linux.js",
       exportName: "n",
-      source: `${jsxImport}function n({children,className}){return $.jsx("section",{className:className??"flex flex-col gap-2",children})}n.Header=function({title}){return $.jsx("h3",{className:"text-base font-medium text-token-text-primary",children:title})};n.Content=function({children}){return $.jsx("div",{className:"flex flex-col divide-y divide-token-border-light rounded-lg border border-token-border-light bg-token-main-surface-primary",children})};export{n};\n`,
+      source: `${jsxImport}function n({children,className}){return $.jsx("section",{className:className??"flex flex-col",children})}n.Header=function({title}){return $.jsx("div",{className:"flex min-h-toolbar items-center justify-between gap-4 pb-1.5",children:$.jsx("div",{className:"text-base font-medium text-token-text-primary",children:title})})};n.Content=function({children}){return $.jsx("div",{className:"flex flex-col gap-1.5",children})};export{n};\n`,
     },
     settingsGroup: {
       assetName: "linux-settings-group-linux.js",
       exportName: "n",
-      source: `${jsxImport}function n({children}){return $.jsx("div",{className:"flex flex-col divide-y divide-token-border-light",children})}export{n};\n`,
+      source: `${jsxImport}function n({children}){return $.jsx("div",{className:"flex flex-col overflow-hidden rounded-2xl border border-token-border [&>*:not(:last-child)]:relative [&>*:not(:last-child)]:after:pointer-events-none [&>*:not(:last-child)]:after:absolute [&>*:not(:last-child)]:after:inset-x-4 [&>*:not(:last-child)]:after:bottom-0 [&>*:not(:last-child)]:after:h-[0.5px] [&>*:not(:last-child)]:after:bg-token-border [&>*:not(:last-child)]:after:content-['']",style:{backgroundColor:"var(--color-background-panel, var(--color-token-bg-fog))"},children})}export{n};\n`,
     },
     settingsPage: {
       assetName: "linux-settings-page-linux.js",
       exportName: "t",
-      source: `${jsxImport}function t({title,subtitle,children}){return $.jsx("div",{className:"h-full min-h-0 w-full overflow-y-auto",children:$.jsxs("div",{className:"mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6",children:[$.jsxs("div",{className:"flex flex-col gap-1",children:[$.jsx("h2",{className:"text-xl font-semibold text-token-text-primary",children:title}),subtitle?$.jsx("p",{className:"text-sm text-token-text-secondary",children:subtitle}):null]}),children]})})}export{t};\n`,
+      source: `${jsxImport}function t({title,subtitle,children}){return $.jsxs("div",{className:"main-surface flex h-full min-h-0 flex-col",children:[$.jsx("div",{className:"draggable flex items-center px-panel electron:h-toolbar extension:h-toolbar-sm"}),$.jsx("div",{className:"scrollbar-stable flex-1 overflow-y-auto p-panel",children:$.jsxs("div",{className:"mx-auto flex w-full max-w-3xl flex-col electron:min-w-[calc(320px*var(--codex-window-zoom))]",children:[$.jsx("div",{className:"pb-8",children:$.jsxs("header",{className:"flex flex-col gap-4 px-[var(--detail-page-inline-inset,0px)]",children:[$.jsx("h1",{className:"heading-lg min-w-0 break-words font-normal text-token-foreground",children:title}),subtitle?$.jsx("div",{className:"text-base text-token-text-secondary",children:subtitle}):null]})}),$.jsx("div",{className:"flex flex-col gap-10",children})]})})]})}export{t};\n`,
     },
     settingsToggle: {
       assetName: "linux-settings-toggle-linux.js",
       exportName: "t",
-      source: `${jsxImport}function t({checked,disabled,onChange,ariaLabel}){let active=!!checked;return $.jsx("button",{type:"button",role:"switch","aria-checked":active,"aria-label":ariaLabel,disabled,"data-state":active?"checked":"unchecked",onClick:()=>{disabled||onChange(!active)},style:{boxSizing:"border-box",width:"32px",height:"20px",borderRadius:"9999px",border:"1px solid var(--color-token-border-default)",background:active?"var(--color-token-radio-active-foreground)":"var(--color-token-bg-secondary)",padding:"2px",display:"inline-flex",alignItems:"center",justifyContent:"flex-start",opacity:disabled?0.5:1,transition:"background-color 150ms ease,border-color 150ms ease"},children:$.jsx("span",{style:{display:"block",width:"14px",height:"14px",borderRadius:"9999px",background:active?"var(--color-token-bg-primary)":"var(--color-token-text-tertiary)",transform:active?"translateX(12px)":"translateX(0)",transition:"transform 150ms ease,background-color 150ms ease"}})})}export{t};\n`,
+      source: `${jsxImport}function t({checked,disabled,onChange,ariaLabel}){let active=!!checked,state=active?"checked":"unchecked",buttonClass=disabled?"inline-flex items-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:rounded-full cursor-not-allowed opacity-60":"inline-flex items-center text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:rounded-full cursor-interaction",trackClass=active?"relative inline-flex shrink-0 items-center rounded-full transition-colors duration-basic ease-out bg-token-charts-blue h-5 w-8":"relative inline-flex shrink-0 items-center rounded-full transition-colors duration-basic ease-out bg-token-foreground/10 h-5 w-8";return $.jsx("button",{type:"button",role:"switch","aria-checked":active,"aria-label":ariaLabel,disabled,"data-state":state,className:buttonClass,onClick:()=>{disabled||onChange(!active)},children:$.jsx("span",{className:trackClass,"data-state":state,children:$.jsx("span",{className:"rounded-full border border-[color:var(--gray-0)] bg-[color:var(--gray-0)] shadow-sm transition-transform duration-basic ease-out data-[state=unchecked]:translate-x-0 h-4 w-4 data-[state=unchecked]:translate-x-[2px] data-[state=checked]:translate-x-[14px]","data-state":state})})})}export{t};\n`,
     },
   };
 }
@@ -455,7 +461,10 @@ function resolveSettingsAssetDependencies(extractedDir, { includeHotkeySettings 
       filePath: path.join(webviewAssetsDir, component.assetName),
       source: component.source,
     });
-    return component;
+    return {
+      ...component,
+      assetSpecifier: versionedAssetSpecifier(component.assetName, component.source),
+    };
   };
 
   let settingsRowCandidate = null;
@@ -470,7 +479,7 @@ function resolveSettingsAssetDependencies(extractedDir, { includeHotkeySettings 
     }
   }
   const settingsRowFallback = settingsRowCandidate == null ? useFallbackComponent("settingsRow") : null;
-  const settingsRowAsset = settingsRowCandidate ?? settingsRowFallback.assetName;
+  const settingsRowAsset = settingsRowCandidate ?? settingsRowFallback.assetSpecifier;
   const settingsLayoutCandidate = tryFindRequiredWebviewAsset(
     webviewAssetsDir,
     /^settings-content-layout-.*\.js$/,
@@ -478,7 +487,7 @@ function resolveSettingsAssetDependencies(extractedDir, { includeHotkeySettings 
     "settings content layout asset",
   );
   const settingsLayoutFallback = settingsLayoutCandidate == null ? useFallbackComponent("settingsPage") : null;
-  const settingsLayoutAsset = settingsLayoutCandidate ?? settingsLayoutFallback.assetName;
+  const settingsLayoutAsset = settingsLayoutCandidate ?? settingsLayoutFallback.assetSpecifier;
   const settingsGroupCandidate = fs
     .readdirSync(webviewAssetsDir)
     .filter((name) => /^settings-group-.*\.js$/.test(name))
@@ -505,11 +514,11 @@ function resolveSettingsAssetDependencies(extractedDir, { includeHotkeySettings 
     settingsRowExportName: settingsRowExportName ?? settingsRowFallback.exportName,
     settingsPageAsset: settingsLayoutAsset,
     settingsPageExportName: settingsLayoutFallback == null ? "t" : settingsLayoutFallback.exportName,
-    settingsSectionAsset: settingsGroupCandidate ?? settingsSectionFallback.assetName,
+    settingsSectionAsset: settingsGroupCandidate ?? settingsSectionFallback.assetSpecifier,
     settingsSectionExportName: settingsGroupCandidate == null ? settingsSectionFallback.exportName : "t",
-    settingsGroupAsset: settingsSurfaceCandidate ?? settingsGroupFallback.assetName,
+    settingsGroupAsset: settingsSurfaceCandidate ?? settingsGroupFallback.assetSpecifier,
     settingsGroupExportName: settingsSurfaceCandidate == null ? settingsGroupFallback.exportName : "t",
-    toggleAsset: toggleDependency.assetName,
+    toggleAsset: toggleDependency.assetSpecifier,
     toggleExportName: toggleDependency.exportName,
     generatedAssets,
   };
@@ -521,9 +530,11 @@ function resolveLinuxDesktopSettingsAsset(extractedDir) {
     includeHotkeySettings: false,
   });
 
+  const source = buildLinuxDesktopSettingsSource(dependencies);
   return {
     filePath: path.join(webviewAssetsDir, linuxDesktopSettingsAsset),
-    source: buildLinuxDesktopSettingsSource(dependencies),
+    source,
+    routeAssetSpecifier: versionedAssetSpecifier(linuxDesktopSettingsAsset, source),
     generatedAssets: dependencies.generatedAssets,
   };
 }
@@ -617,7 +628,10 @@ function collectOptionalMatchingAssetPatches(extractedDir, predicate, patchFn) {
 
   return patches;
 }
-function collectLinuxDesktopRouteAndNavigationPatches(extractedDir) {
+function collectLinuxDesktopRouteAndNavigationPatches(
+  extractedDir,
+  routeAssetSpecifier = linuxDesktopSettingsAsset,
+) {
   const webviewAssetsDir = path.join(extractedDir, "webview", "assets");
   if (!fs.existsSync(webviewAssetsDir)) {
     throw new Error(`Required Keybinds settings patch failed: missing webview assets directory ${webviewAssetsDir}`);
@@ -642,7 +656,7 @@ function collectLinuxDesktopRouteAndNavigationPatches(extractedDir) {
     let patchedSource = currentSource;
     if (isSettingsRouteBundleSource(currentSource)) {
       routeMatched = true;
-      patchedSource = applyLinuxDesktopSettingsRoutePatch(patchedSource);
+      patchedSource = applyLinuxDesktopSettingsRoutePatch(patchedSource, routeAssetSpecifier);
     }
     if (isSettingsNavigationBundleSource(currentSource)) {
       navigationMatched = true;
@@ -656,7 +670,7 @@ function collectLinuxDesktopRouteAndNavigationPatches(extractedDir) {
         patchFn(source) {
           let nextSource = source;
           if (isSettingsRouteBundleSource(nextSource)) {
-            nextSource = applyLinuxDesktopSettingsRoutePatch(nextSource);
+            nextSource = applyLinuxDesktopSettingsRoutePatch(nextSource, routeAssetSpecifier);
           }
           if (isSettingsNavigationBundleSource(nextSource)) {
             nextSource = applyLinuxDesktopSettingsNavigationPatch(nextSource);
@@ -777,7 +791,10 @@ function patchKeybindsSettingsAssets(extractedDir) {
         isLinuxShortcutPhysicalKeyFallbackBundleSource,
         applyLinuxShortcutPhysicalKeyFallbackPatch,
       ),
-      ...collectLinuxDesktopRouteAndNavigationPatches(extractedDir),
+      ...collectLinuxDesktopRouteAndNavigationPatches(
+        extractedDir,
+        settingsAsset.routeAssetSpecifier,
+      ),
     ];
 
     fs.writeFileSync(settingsAsset.filePath, settingsAsset.source, "utf8");
@@ -1074,20 +1091,25 @@ function isSettingsSharedMetadataBundleSource(currentSource) {
 }
 
 function isSettingsNavigationBundleSource(currentSource) {
-  return (
-    /[A-Za-z_$][\w$]*=\{[^;]*"linux-desktop":[A-Za-z_$][\w$]*,/.test(currentSource)
-    && currentSource.includes("slugs:[`general-settings`,`linux-desktop`")
-  ) || (
-    /[A-Za-z_$][\w$]*=\{[^;]*"general-settings":[A-Za-z_$][\w$]*,/.test(currentSource)
-    && /[A-Za-z_$][\w$]*=\[`general-settings`,/.test(currentSource)
-    && currentSource.includes("slugs:[`general-settings`,")
-  );
+  return /[A-Za-z_$][\w$]*=\[`general-settings`,(?:`linux-desktop`,)?`import`,/.test(currentSource)
+    && currentSource.includes("slugs:[`general-settings`,");
 }
 
-function applyLinuxDesktopSettingsRoutePatch(currentSource) {
+function applyLinuxDesktopSettingsRoutePatch(
+  currentSource,
+  routeAssetSpecifier = linuxDesktopSettingsAsset,
+) {
   let patchedSource = currentSource;
 
-  if (!patchedSource.includes(`${linuxDesktopSettingsAsset}`)) {
+  if (patchedSource.includes(linuxDesktopSettingsAsset)) {
+    const existingSpecifierPattern = new RegExp(
+      `${escapeRegExp(linuxDesktopSettingsAsset)}(?:\\?v=[a-f0-9]+)?`,
+      "g",
+    );
+    return patchedSource.replace(existingSpecifierPattern, routeAssetSpecifier);
+  }
+
+  if (!patchedSource.includes(routeAssetSpecifier)) {
     const routePattern =
       /((?:var )?[A-Za-z_$][\w$]*=\{)(?="general-settings":([A-Za-z_$][\w$]*)\(async\(\)=>\(await ([A-Za-z_$][\w$]*)\(async\(\)=>\{let\{GeneralSettings:[A-Za-z_$][\w$]*\}=await import\(`)/u;
     if (!routePattern.test(patchedSource)) {
@@ -1096,7 +1118,7 @@ function applyLinuxDesktopSettingsRoutePatch(currentSource) {
     patchedSource = patchedSource.replace(
       routePattern,
       (_match, routeMapPrefix, routeLoader, preloadAlias) =>
-        `${routeMapPrefix}"linux-desktop":${routeLoader}(async()=>(await ${preloadAlias}(async()=>{let{LinuxDesktopSettings:e}=await import(\`./${linuxDesktopSettingsAsset}\`);return{LinuxDesktopSettings:e}},[],import.meta.url)).LinuxDesktopSettings),`,
+        `${routeMapPrefix}"linux-desktop":${routeLoader}(async()=>(await ${preloadAlias}(async()=>{let{LinuxDesktopSettings:e}=await import(\`./${routeAssetSpecifier}\`);return{LinuxDesktopSettings:e}},[],import.meta.url)).LinuxDesktopSettings),`,
     );
   }
 
@@ -1106,19 +1128,8 @@ function applyLinuxDesktopSettingsRoutePatch(currentSource) {
 function applyLinuxDesktopSettingsNavigationPatch(currentSource) {
   let patchedSource = currentSource;
 
-  if (!/[,{]"linux-desktop":[A-Za-z_$][\w$]*,"general-settings":/.test(patchedSource)) {
-    const iconPattern = /([A-Za-z_$][\w$]*=\{)"general-settings":([A-Za-z_$][\w$]*),/;
-    if (!iconPattern.test(patchedSource)) {
-      throw new Error("Required Keybinds settings patch failed: could not add Linux desktop icon");
-    }
-    patchedSource = patchedSource.replace(
-      iconPattern,
-      (_match, prefix, icon) => `${prefix}"linux-desktop":${icon},"general-settings":${icon},`,
-    );
-  }
-
   if (!/=\[`general-settings`,`linux-desktop`/.test(patchedSource)) {
-    const orderPattern = /([A-Za-z_$][\w$]*=\[`general-settings`,)(?!`linux-desktop`)/;
+    const orderPattern = /([A-Za-z_$][\w$]*=\[`general-settings`,)(?=`import`,)/;
     if (!orderPattern.test(patchedSource)) {
       throw new Error("Required Keybinds settings patch failed: could not add Linux desktop nav order");
     }
@@ -1131,47 +1142,6 @@ function applyLinuxDesktopSettingsNavigationPatch(currentSource) {
       throw new Error("Required Keybinds settings patch failed: could not add Linux desktop nav group");
     }
     patchedSource = patchedSource.replace(groupPattern, "$1`linux-desktop`,");
-  }
-
-  if (
-    !patchedSource.includes("case`linux-desktop`:return l===`electron`")
-    && !patchedSource.includes("case`linux-desktop`:case`general-settings`:case`agent`:case`personalization`:return!0;")
-  ) {
-    const visibilityNeedle =
-      "case`appearance`:case`git-settings`:case`worktrees`:case`local-environments`:case`data-controls`:case`environments`:return l===`electron`;";
-    const visibilityPatch =
-      "case`linux-desktop`:return l===`electron`;case`appearance`:case`git-settings`:case`worktrees`:case`local-environments`:case`data-controls`:case`environments`:return l===`electron`;";
-    if (!patchedSource.includes(visibilityNeedle)) {
-      const currentVisibilityNeedle =
-        "case`general-settings`:case`agent`:case`personalization`:return!0;";
-      const currentVisibilityPatch =
-        "case`linux-desktop`:case`general-settings`:case`agent`:case`personalization`:return!0;";
-      if (!patchedSource.includes(currentVisibilityNeedle)) {
-        throw new Error("Required Keybinds settings patch failed: could not add Linux desktop visibility");
-      }
-      patchedSource = patchedSource.replace(currentVisibilityNeedle, currentVisibilityPatch);
-    } else {
-      patchedSource = patchedSource.replace(visibilityNeedle, visibilityPatch);
-    }
-  }
-
-  if (!/case`linux-desktop`:[A-Za-z_$][\w$]*=!1;break [A-Za-z_$][\w$]*;/.test(patchedSource)) {
-    const redirectNeedle =
-      "case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`account`:case`data-controls`:case`personalization`:k=!1;break bb0;";
-    const redirectPatch =
-      "case`linux-desktop`:k=!1;break bb0;case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`account`:case`data-controls`:case`personalization`:k=!1;break bb0;";
-    if (patchedSource.includes(redirectNeedle)) {
-      patchedSource = patchedSource.replace(redirectNeedle, redirectPatch);
-    } else {
-      const currentLoadingPattern = /(case`appearance`:case`general-settings`:case`agent`:case`git-settings`:case`data-controls`:case`personalization`:([A-Za-z_$][\w$]*)=!1;break ([A-Za-z_$][\w$]*);)/;
-      if (currentLoadingPattern.test(patchedSource)) {
-        patchedSource = patchedSource.replace(
-          currentLoadingPattern,
-          (_match, existingCases, loadingAlias, breakLabel) =>
-            `case\`linux-desktop\`:${loadingAlias}=!1;break ${breakLabel};${existingCases}`,
-        );
-      }
-    }
   }
 
   return patchedSource;
