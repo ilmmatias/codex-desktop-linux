@@ -4,7 +4,6 @@ const { requireName } = require("../../lib/minified-js.js");
 
 function applyLinuxTrayPatch(currentSource, iconPathExpression) {
   let patchedSource = currentSource;
-  void iconPathExpression;
 
   const closeToTrayPattern =
     /if\(\(process\.platform===`win32`\|\|process\.platform===`linux`\)&&!this\.isAppQuitting&&this\.options\.canHideLastWindowToTray\?\.\(\)===!0&&!([A-Za-z_$][\w$]*)\)\{([A-Za-z_$][\w$]*)\.preventDefault\(\),([A-Za-z_$][\w$]*)\.hide\(\);return\}/;
@@ -23,23 +22,95 @@ function applyLinuxTrayPatch(currentSource, iconPathExpression) {
     );
   }
 
-  if (!patchedSource.includes("codexLinuxRegisterTray(")) {
-    const trayConstructorPattern =
-      /([A-Za-z_$][\w$]*)=new ([A-Za-z_$][\w$]*)\.Tray\(([^;)]+)\)/;
-    const match = patchedSource.match(trayConstructorPattern);
-    if (
-      match == null ||
-      !patchedSource.includes("if(process.platform===`linux`){") ||
-      !patchedSource.includes("updatePersistentTrayMenu(){process.platform===`linux`")
-    ) {
-      console.warn("WARN: Could not find current Linux tray factory — skipping Linux tray teardown registration patch");
+  const trayWhenReadyFallbackPattern =
+    /if\(typeof ([A-Za-z_$][\w$]*)\.whenReady!=`function`\)return process\.platform!==`linux`;try\{return await \1\.whenReady\(\),!0\}catch\{return!1\}/;
+  const compatibleTrayWhenReadyPattern =
+    /if\(typeof ([A-Za-z_$][\w$]*)\.whenReady!=`function`\)return!0;try\{return await \1\.whenReady\(\),!0\}catch\{return!1\}/;
+  if (!compatibleTrayWhenReadyPattern.test(patchedSource)) {
+    if (!trayWhenReadyFallbackPattern.test(patchedSource)) {
+      console.warn("WARN: Could not find current Linux tray whenReady fallback — skipping Linux tray compatibility patch");
       return currentSource;
     }
-    const [, trayVar, electronVar, constructorArgs] = match;
     patchedSource = patchedSource.replace(
-      trayConstructorPattern,
-      `${trayVar}=typeof codexLinuxRegisterTray===\`function\`?codexLinuxRegisterTray(new ${electronVar}.Tray(${constructorArgs})):new ${electronVar}.Tray(${constructorArgs})`,
+      trayWhenReadyFallbackPattern,
+      "if(typeof $1.whenReady!=`function`)return!0;try{return await $1.whenReady(),!0}catch{return!1}",
     );
+  }
+
+  const trayIsReadyFallbackPattern =
+    /return typeof ([A-Za-z_$][\w$]*)\.isReady==`function`\?\1\.isReady\(\):process\.platform!==`linux`/;
+  const compatibleTrayIsReadyPattern =
+    /return typeof ([A-Za-z_$][\w$]*)\.isReady==`function`\?\1\.isReady\(\):!0/;
+  if (!compatibleTrayIsReadyPattern.test(patchedSource)) {
+    if (!trayIsReadyFallbackPattern.test(patchedSource)) {
+      console.warn("WARN: Could not find current Linux tray isReady fallback — skipping Linux tray compatibility patch");
+      return currentSource;
+    }
+    patchedSource = patchedSource.replace(
+      trayIsReadyFallbackPattern,
+      "return typeof $1.isReady==`function`?$1.isReady():!0",
+    );
+  }
+
+  if (
+    iconPathExpression != null &&
+    !patchedSource.includes("let __codexLinuxTrayFallbackIcon=")
+  ) {
+    const linuxTrayIconPattern =
+      /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\.nativeImage\.createFromPath\(([^;]+)\);if\(\1\.isEmpty\(\)\)throw Error\(`Linux tray application icon is unavailable`\)/;
+    const match = patchedSource.match(linuxTrayIconPattern);
+    if (match == null) {
+      console.warn("WARN: Could not find current Linux tray icon loader — skipping Linux tray compatibility patch");
+      return currentSource;
+    }
+    const [iconLoader, imageVar, electronVar, upstreamIconPath] = match;
+    patchedSource = patchedSource.replace(
+      iconLoader,
+      `${imageVar}=${electronVar}.nativeImage.createFromPath(${upstreamIconPath});if(${imageVar}.isEmpty()){let __codexLinuxTrayFallbackIcon=${electronVar}.nativeImage.createFromPath(${iconPathExpression});if(!__codexLinuxTrayFallbackIcon.isEmpty())${imageVar}=__codexLinuxTrayFallbackIcon}if(${imageVar}.isEmpty())throw Error(\`Linux tray application icon is unavailable\`)`,
+    );
+  }
+
+  const conditionalTrayConstructorPattern =
+    /([A-Za-z_$][\w$]*)=typeof codexLinuxRegisterTray===`function`\?codexLinuxRegisterTray\(new ([A-Za-z_$][\w$]*)\.Tray\(([^;]+?)\)\):new \2\.Tray\(\3\)/;
+  const retainedTrayConstructorPattern =
+    /([A-Za-z_$][\w$]*)=codexLinuxRegisterTray\(new ([A-Za-z_$][\w$]*)\.Tray\(([^;]+?)\)\)/;
+  const trayConstructorPattern =
+    /([A-Za-z_$][\w$]*)=new ([A-Za-z_$][\w$]*)\.Tray\(([^;)]+)\)/;
+  const constructorMatch =
+    patchedSource.match(conditionalTrayConstructorPattern) ??
+    patchedSource.match(retainedTrayConstructorPattern) ??
+    patchedSource.match(trayConstructorPattern);
+  if (
+    constructorMatch == null ||
+    !patchedSource.includes("if(process.platform===`linux`){") ||
+    !patchedSource.includes("updatePersistentTrayMenu(){process.platform===`linux`")
+  ) {
+    console.warn("WARN: Could not find current Linux tray factory — skipping Linux tray retention patch");
+    return currentSource;
+  }
+
+  const [, trayVar, electronVar, constructorArgs] = constructorMatch;
+  const retainedConstructor =
+    `${trayVar}=codexLinuxRegisterTray(new ${electronVar}.Tray(${constructorArgs}))`;
+  if (conditionalTrayConstructorPattern.test(patchedSource)) {
+    patchedSource = patchedSource.replace(conditionalTrayConstructorPattern, retainedConstructor);
+  } else if (!retainedTrayConstructorPattern.test(patchedSource)) {
+    patchedSource = patchedSource.replace(trayConstructorPattern, retainedConstructor);
+  }
+
+  if (!patchedSource.includes("codexLinuxRegisterTray=e=>")) {
+    const constructorIndex = patchedSource.indexOf(retainedConstructor);
+    const factoryIndex = patchedSource.lastIndexOf("async function ", constructorIndex);
+    if (constructorIndex === -1 || factoryIndex === -1) {
+      console.warn("WARN: Could not find current Linux tray helper insertion point — skipping Linux tray retention patch");
+      return currentSource;
+    }
+    const retentionHelper =
+      "let codexLinuxTray=null,codexLinuxRegisterTray=e=>(codexLinuxTray=e,e);";
+    patchedSource =
+      patchedSource.slice(0, factoryIndex) +
+      retentionHelper +
+      patchedSource.slice(factoryIndex);
   }
 
   return patchedSource;

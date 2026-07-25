@@ -94,10 +94,10 @@
 
         codexDmg = pkgs.fetchurl {
           url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT.dmg";
-          hash = "sha256-/0WRUJkWEgB1SScNLSjF54zsa9asIAp62l7WwDE2m4c=";
+          hash = "sha256-roZOLe99tW0Lt3qHaly+TkwvVUzMZUzskhuUaJJYPAo=";
         };
 
-        codexVersion = "26.715.21425";
+        codexVersion = "26.721.41059";
         electronVersion = "42.3.0";
         electronPlatform =
           {
@@ -119,6 +119,12 @@
         electronHeaders = pkgs.fetchurl {
           url = "https://artifacts.electronjs.org/headers/dist/v${electronVersion}/node-v${electronVersion}-headers.tar.gz";
           hash = "sha256-ghAJ+cGDAFDYlK755hkGywpTeyAAstm77ZmF//HV4NA=";
+        };
+
+        codexMicroNodeHidArchive = pkgs.fetchurl {
+          name = "node-hid-3.3.0.tgz";
+          url = "https://registry.npmjs.org/node-hid/-/node-hid-3.3.0.tgz";
+          hash = "sha512-j+dFgJLRAE0nufQKXk3IfS6T6YuHhCgMvz4TrG0sgtb6DSCdYpfJ1etcdmeCmPQjUgO+yo32ktVrRliNs/+fmg==";
         };
 
         browserUseNodeReplRuntime = pkgs.fetchurl {
@@ -345,6 +351,21 @@
           stdenv.cc.cc.lib
           zlib
         ]);
+        codexMicroRuntimeLibPath = pkgs.lib.makeLibraryPath (with pkgs; [
+          systemd
+          libusb1
+          stdenv.cc.cc.lib
+          glibc
+        ]);
+        gsettingsSchemaPackages = with pkgs; [
+          gsettings-desktop-schemas
+          gtk3
+        ];
+        gsettingsSchemaRoot = pkg:
+          pkgs.lib.removeSuffix "/glib-2.0/schemas" (pkgs.glib.getSchemaPath pkg);
+        gsettingsSchemaDataDirs =
+          pkgs.lib.concatMapStringsSep ":" gsettingsSchemaRoot gsettingsSchemaPackages;
+        xdgDefaultDataDirs = "/usr/local/share:/usr/share";
         launcherPath = pkgs.lib.makeBinPath (with pkgs; [
           bash
           coreutils
@@ -502,6 +523,7 @@ PY
             else
               normalizeLinuxFeaturesConfig linuxFeaturesConfigOverride;
           effectiveLinuxFeatureIds = effectiveLinuxFeaturesConfig.enabled;
+          codexMicroEnabled = builtins.elem "codex-micro" effectiveLinuxFeatureIds;
         in
         pkgs.stdenv.mkDerivation {
           pname = "codex-desktop${packageSuffix { inherit enableComputerUseUi; linuxFeatureIds = effectiveLinuxFeatureIds; }}-payload";
@@ -554,6 +576,9 @@ PY
             export CODEX_LINUX_FEATURES_CONFIG="${linuxFeaturesConfigFile effectiveLinuxFeaturesConfig}"
             export CODEX_ELECTRON_ZIP_SOURCE="${electronZip}"
             export CODEX_NATIVE_MODULES_SOURCE="${codexNativeModules}"
+            ${pkgs.lib.optionalString codexMicroEnabled ''
+            export CODEX_MICRO_NODE_HID_ARCHIVE="${codexMicroNodeHidArchive}"
+            ''}
             ${pkgs.lib.optionalString (browserUseNodeRepl != null) ''
             export CODEX_LINUX_NODE_REPL_SOURCE="${browserUseNodeRepl}/bin/node_repl"
             ''}
@@ -602,6 +627,7 @@ PY
             else
               normalizeLinuxFeaturesConfig linuxFeaturesConfigOverride;
           normalizedLinuxFeatureIds = effectiveLinuxFeaturesConfig.enabled;
+          codexMicroEnabled = builtins.elem "codex-micro" normalizedLinuxFeatureIds;
           featureArgs = {
             inherit enableComputerUseUi;
             linuxFeatureIds = normalizedLinuxFeatureIds;
@@ -649,6 +675,31 @@ PY
               --unpack "{*.node,*.so,*.dylib}"
             rm -rf "$resources_dir/app-extracted"
 
+            ${pkgs.lib.optionalString codexMicroEnabled ''
+            codex_micro_node_count=0
+            while IFS= read -r codex_micro_node; do
+              codex_micro_node_count=$((codex_micro_node_count + 1))
+              patchelf --set-rpath "${codexMicroRuntimeLibPath}" "$codex_micro_node"
+              actual_rpath="$(patchelf --print-rpath "$codex_micro_node")"
+              if [ "$actual_rpath" != "${codexMicroRuntimeLibPath}" ]; then
+                echo "codex-micro node-hid RPATH verification failed: $actual_rpath" >&2
+                exit 1
+              fi
+            done < <(
+              find "$resources_dir/app.asar.unpacked" -type f \
+                -path '*/node-hid/prebuilds/HID_hidraw-linux-*/node-napi-v4.node' \
+                -print
+            )
+            if [ "$codex_micro_node_count" -ne 1 ]; then
+              echo "expected exactly one codex-micro node-hid Linux binding, found $codex_micro_node_count" >&2
+              exit 1
+            fi
+
+            install -Dm0644 \
+              "$out/opt/codex-desktop/.codex-linux/features/codex-micro/70-codex-micro.rules" \
+              "$out/lib/udev/rules.d/70-codex-micro.rules"
+            ''}
+
             for node_repl_binary in \
               "$resources_dir/node_repl" \
               "$resources_dir/node_repl.codex-linux-original"; do
@@ -688,6 +739,8 @@ PY
 
             makeWrapper "$out/opt/codex-desktop/start.sh" "$out/bin/codex-desktop" \
               --prefix PATH : "${payloadLauncherPath}" \
+              --run 'export XDG_DATA_DIRS="''${XDG_DATA_DIRS:-${xdgDefaultDataDirs}}"' \
+              --prefix XDG_DATA_DIRS : "${gsettingsSchemaDataDirs}" \
               --prefix PATH : "/run/current-system/sw/bin" \
               --prefix PATH : "/etc/profiles/per-user/$(whoami)/bin"
 
@@ -785,6 +838,43 @@ PY
           notification-actions-linux = codexNotificationActionsBinary;
           notification-actions-installer = pkgs.runCommand "codex-notification-actions-installer-check" { } ''
             grep -F 'CODEX_NOTIFICATION_ACTIONS_SOURCE=' ${installer}/bin/codex-desktop-installer >/dev/null
+            touch "$out"
+          '';
+          nix-gsettings-schema-wrapper = pkgs.runCommand "codex-desktop-nix-gsettings-schema-wrapper-check" { } ''
+            schema_data_dirs=${pkgs.lib.escapeShellArg gsettingsSchemaDataDirs}
+            default_data_dirs=${pkgs.lib.escapeShellArg xdgDefaultDataDirs}
+            explicit_data_dirs=/custom/share:/other/share
+
+            run_wrapper() {
+              case "$1" in
+                unset) unset XDG_DATA_DIRS ;;
+                empty) export XDG_DATA_DIRS= ;;
+                populated) export XDG_DATA_DIRS="$explicit_data_dirs" ;;
+                *) echo "unknown test case: $1" >&2; return 1 ;;
+              esac
+
+              exec() {
+                printf '%s\n' "$XDG_DATA_DIRS"
+              }
+
+              source ${codexDesktop}/bin/codex-desktop
+            }
+
+            assert_data_dirs() {
+              test_case="$1"
+              expected="$2"
+              actual="$(run_wrapper "$test_case")"
+              if [ "$actual" != "$expected" ]; then
+                printf '%s: expected <%s>, got <%s>\n' \
+                  "$test_case" "$expected" "$actual" >&2
+                return 1
+              fi
+            }
+
+            expected_defaults="$schema_data_dirs:$default_data_dirs"
+            assert_data_dirs unset "$expected_defaults"
+            assert_data_dirs empty "$expected_defaults"
+            assert_data_dirs populated "$schema_data_dirs:$explicit_data_dirs"
             touch "$out"
           '';
           nix-linux-features-evaluation = import ./nix/linux-features-test.nix {
