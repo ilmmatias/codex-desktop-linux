@@ -15,6 +15,7 @@ PACKAGE_OUTPUTS=(
     ".#codex-desktop-computer-use-ui"
     ".#codex-desktop-remote-mobile-control"
     ".#codex-desktop-computer-use-ui-remote-mobile-control"
+    ".#checks.x86_64-linux.watchdog-linux-features"
     ".#installer"
 )
 
@@ -36,8 +37,10 @@ fi
 
 NIX_PIN_DIFF_PATHS=(
     "flake.nix"
+    "linux-features/directory-only-working-tree-watch/watchbound-artifacts.json"
     "nix/native-modules/package.json"
     "nix/native-modules/package-lock.json"
+    "nix/watchbound-Cargo.lock"
 )
 
 validate_sri_hash() {
@@ -167,8 +170,7 @@ nix_pin_files_changed() {
 }
 
 main() {
-    mkdir -p "$(dirname "$UPSTREAM_DMG_PATH")"
-    curl -fL --retry 3 -o "$UPSTREAM_DMG_PATH" "$UPSTREAM_DMG_URL"
+    "$REPO_DIR/scripts/ci/download-upstream-dmg.sh" "$UPSTREAM_DMG_URL" "$UPSTREAM_DMG_PATH"
 
     new_dmg_hash="$(nix hash file --sri --type sha256 "$UPSTREAM_DMG_PATH")"
     if ! validate_sri_hash "$new_dmg_hash"; then

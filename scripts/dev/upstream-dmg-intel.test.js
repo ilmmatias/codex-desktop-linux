@@ -448,6 +448,66 @@ test("protects the current Hatch Pet skill and Linux bundled-skill staging owner
     ]);
   }));
 
+test("tracks Browser and Chrome site-status fail-open policy independently", () =>
+  withTempDir((workspace) => {
+    const policySurface = productionRegistry.surfaces.find(
+      (surface) => surface.id === "browser_use_policy_shims",
+    );
+    assert.ok(policySurface, "expected production registry to protect Browser Use policy shims");
+
+    const focusedRegistry = {
+      version: productionRegistry.version,
+      surfaces: [policySurface],
+    };
+    const goodPolicy = [
+      "config.toml",
+      "/aura/site_status",
+      "codexLinuxFileUrlPolicy",
+      "error_fail_open",
+      "site_status_unavailable",
+    ].join(" ");
+    const incompletePolicy = [
+      "config.toml",
+      "/aura/site_status",
+      "codexLinuxFileUrlPolicy",
+    ].join(" ");
+
+    for (const missingPlugin of ["browser", "chrome"]) {
+      const appDir = path.join(workspace, missingPlugin, "ChatGPT.app");
+      for (const plugin of ["browser", "chrome"]) {
+        writeFile(
+          path.join(
+            appDir,
+            "Contents/Resources/plugins/openai-bundled/plugins",
+            plugin,
+            "scripts/browser-client.mjs",
+          ),
+          plugin === missingPlugin ? incompletePolicy : goodPolicy,
+        );
+      }
+
+      const protectedSurfaces = extractProtectedSurfaces({
+        inventory: createInventory({ registry: focusedRegistry, sourcePath: appDir }),
+        registry: focusedRegistry,
+        repoRoot: process.cwd(),
+      });
+      const surface = protectedSurfaces.surfacesById.browser_use_policy_shims;
+
+      assert.equal(surface.status, "PARTIAL");
+      assert.ok(
+        surface.missingAnchors.some(
+          (anchor) => anchor.id === `${missingPlugin}-plugin-policy-shim`,
+        ),
+      );
+      assert.ok(
+        surface.satisfiedAnchors.some(
+          (anchor) =>
+            anchor.id === `${missingPlugin === "browser" ? "chrome" : "browser"}-plugin-policy-shim`,
+        ),
+      );
+    }
+  }));
+
 test("marks Chronicle settings toggle surface partial when the Memory master toggle path disappears", () =>
   withTempDir((workspace) => {
     const appDir = createFixtureApp(workspace, "missing-memory-chronicle-disable");
@@ -591,8 +651,73 @@ test("classifies required patch-report failures as acceptance blockers", () =>
     });
 
     assert.ok(findClassification(driftReport, "record_and_replay_event_stream", "PATCH_BROKEN"));
+    assert.ok(
+      !findClassification(
+        driftReport,
+        "record_and_replay_event_stream",
+        "PATCH_INTEGRITY_BROKEN",
+      ),
+    );
     assert.ok(!findClassification(driftReport, "record_and_replay_event_stream", "PATCH_REVIEW"));
   }));
+
+test("classifies patch integrity failures as acceptance blockers", () =>
+  withTempDir((workspace) => {
+    const candidateApp = createFixtureApp(workspace, "candidate");
+    const candidate = extractProtectedSurfaces({
+      inventory: createInventory({ registry, sourcePath: candidateApp }),
+      registry,
+      repoRoot: process.cwd(),
+    });
+
+    const driftReport = compareProtectedSurfaces({
+      candidate,
+      patchReport: {
+        patches: [
+          {
+            name: "record-and-replay bridge patch",
+            status: "failed-integrity",
+            reason: "rollback could not restore original bytes",
+            surfaceId: "record_and_replay_event_stream",
+          },
+        ],
+      },
+    });
+
+    assert.ok(
+      findClassification(
+        driftReport,
+        "record_and_replay_event_stream",
+        "PATCH_INTEGRITY_BROKEN",
+      ),
+    );
+    assert.ok(!findClassification(driftReport, "record_and_replay_event_stream", "PATCH_BROKEN"));
+    assert.ok(!findClassification(driftReport, "record_and_replay_event_stream", "PATCH_REVIEW"));
+  }));
+
+test("renders a remediation for patch integrity blockers", () => {
+  const actionPlan = renderActionPlanMarkdown(
+    {
+      surfaceDrift: [
+        {
+          surfaceId: "record_and_replay_event_stream",
+          classification: "PATCH_INTEGRITY_BROKEN",
+          patches: [
+            {
+              name: "record-and-replay bridge patch",
+              status: "failed-integrity",
+            },
+          ],
+        },
+      ],
+    },
+    { source: { path: "candidate.app" } },
+  );
+
+  assert.match(actionPlan, /stop candidate acceptance/);
+  assert.match(actionPlan, /rebuild from the fresh current DMG/);
+  assert.match(actionPlan, /do not promote bytes whose original state cannot be proven/);
+});
 
 test("classifies unresolved Linux settings patch symbols as acceptance blockers", () =>
   withTempDir((workspace) => {

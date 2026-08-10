@@ -26,8 +26,8 @@ would route work into a partially destroyed application context.
 The current upstream main bundle has one targeted lifecycle `will-quit` handler
 with two cleanup branches:
 
-- a reduced branch stops Codex Micro and flushes tracing;
-- a full branch also flushes global state and settings.
+- a reduced branch flushes global state, stops Codex Micro, and flushes tracing;
+- a full branch additionally flushes settings.
 
 Both branches call `preventDefault()`, run lifecycle disposers, wait with
 `Promise.allSettled()`, dispose the application context and shared disposable
@@ -68,10 +68,11 @@ On Linux, both branches now pass a cleanup factory to one bounded helper:
 
 1. `Promise.resolve().then(factory)` contains synchronous disposer and drain
    setup exceptions.
-2. `Promise.race()` limits the drain to three seconds.
+2. `Promise.race()` limits the complete drain and context-disposal sequence to
+   three seconds.
 3. Rejected `Promise.allSettled()` results and deadline expiry are logged.
-4. Context disposal remains bounded by the upstream five-second limit and
-   cannot suppress shared-disposable cleanup.
+4. Context disposal runs inside the same three-second deadline, so the upstream
+   timeout cannot extend the lifetime of an already windowless process.
 5. Shared-disposable failure is logged and cannot suppress `app.exit(0)`.
 
 `app.exit(0)` is deliberate. The patched path has already run the available
@@ -106,7 +107,7 @@ Automated regression coverage exercises:
 - both current upstream drain branches;
 - synchronous lifecycle-disposer and drain-setup failures;
 - asynchronous drain rejection and deadline expiry;
-- context-disposal and shared-disposable failures;
+- context-disposal stalls and failures, plus shared-disposable failures;
 - Linux forced exit and unchanged non-Linux graceful quit;
 - late drain settlement after the deadline;
 - exact idempotence and scoped postcondition detection;

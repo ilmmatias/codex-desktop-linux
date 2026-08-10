@@ -138,7 +138,8 @@ Power slider or opening a nested Model submenu. The compact GPT-5.6 Power
 slider also derives Sol's positions from the model's `supportedReasoningEfforts`
 after the app filters that list through the reasoning efforts enabled in
 settings. Enabled efforts such as Max therefore appear without maintaining a
-separate hard-coded effort list.
+separate hard-coded effort list. This tweak is disabled by default and must be
+enabled explicitly.
 
 Config keys:
 
@@ -147,7 +148,7 @@ Config keys:
 
 ### `reasoning.keepEffortLabelsEnglish`
 
-Leaves the reasoning effort values as `None`, `Minimal`, `Low`, `Medium`,
+Leaves the current reasoning effort values as `None`, `Minimal`, `Medium`,
 `High`, `XHigh`, `Max`, and `Ultra` in the Simplified Chinese locale. The
 surrounding picker title and usage warning remain translated. This avoids
 collapsing distinct upstream values such as `XHigh` and `Ultra` into the same

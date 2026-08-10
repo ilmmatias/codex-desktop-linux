@@ -72,6 +72,24 @@ test("rejects required patch and post-patch integrity failures", () => withFixtu
   assert.ok(decision.blockers.some((item) => item.code === "post-patch-integrity"));
 }));
 
+test("rejects a fatal descriptor integrity failure regardless of optional policy", () => withFixture(({ root, dmg }) => {
+  const core = requiredCoreReport();
+  core.patches.push(patch("optional-transaction", {
+    status: "failed-integrity",
+    ciPolicy: "optional",
+    reason: "rollback could not restore original bytes",
+  }));
+  const decision = evaluate(root, dmg, { core });
+  assert.equal(decision.verdict, "rejected");
+  assert.ok(
+    decision.blockers.some(
+      (item) =>
+        item.name === "optional-transaction" &&
+        item.reason.includes("failed-integrity"),
+    ),
+  );
+}));
+
 test("rejects drift from a user-enabled feature", () => withFixture(({ root, dmg }) => {
   const core = requiredCoreReport();
   core.enabledFeatures = ["ui-tweaks"];
@@ -193,10 +211,144 @@ test("upstream workflow concurrency is isolated per PR or ref", () => {
   );
   assert.doesNotMatch(workflow, /group: upstream-dmg-acceptance-\$\{\{ github\.event_name \}\}\s*$/m);
   assert.equal((workflow.match(/- linux-features\/\*\*/g) ?? []).length, 2);
+  assert.equal((workflow.match(/- scripts\/ci\/download-upstream-dmg\.sh/g) ?? []).length, 2);
   assert.equal((workflow.match(/- scripts\/lib\/linux-features\.js/g) ?? []).length, 2);
   assert.doesNotMatch(workflow, /uses:\s+[^\s]+@v\d/);
   assert.match(workflow, /ref: \$\{\{ github\.event\.repository\.default_branch \}\}/);
   assert.match(workflow, /persist-credentials: false/);
+  assert.match(
+    workflow,
+    /scripts\/ci\/download-upstream-dmg\.sh[\s\S]*--reuse-existing/,
+  );
+});
+
+test("CI DMG downloader retries empty responses and promotes only non-empty files", () => withFixture(({ root }) => {
+  const bin = path.join(root, "bin");
+  const destination = path.join(root, "Codex.dmg");
+  const attempts = path.join(root, "attempts");
+  const curl = path.join(bin, "curl");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(curl, `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) output="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+count=0
+[ ! -f "$TEST_ATTEMPTS" ] || count="$(cat "$TEST_ATTEMPTS")"
+count=$((count + 1))
+printf '%s\\n' "$count" > "$TEST_ATTEMPTS"
+if [ "$count" -eq 1 ]; then
+  : > "$output"
+else
+  printf '%s' 'complete dmg' > "$output"
+fi
+`);
+  fs.chmodSync(curl, 0o755);
+
+  const result = spawnSync("bash", [
+    path.resolve(__dirname, "download-upstream-dmg.sh"),
+    "https://example.test/Codex.dmg",
+    destination,
+  ], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      TEST_ATTEMPTS: attempts,
+      CODEX_DMG_RETRY_DELAY_SECONDS: "0",
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.readFileSync(attempts, "utf8").trim(), "2");
+  assert.equal(fs.readFileSync(destination, "utf8"), "complete dmg");
+  assert.equal(fs.existsSync(`${destination}.part`), false);
+}));
+
+test("CI DMG downloader preserves the previous file when every response is empty", () => withFixture(({ root }) => {
+  const bin = path.join(root, "bin");
+  const destination = path.join(root, "Codex.dmg");
+  const curl = path.join(bin, "curl");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(destination, "previous dmg");
+  fs.writeFileSync(curl, `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) output="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+: > "$output"
+`);
+  fs.chmodSync(curl, 0o755);
+
+  const result = spawnSync("bash", [
+    path.resolve(__dirname, "download-upstream-dmg.sh"),
+    "https://example.test/Codex.dmg",
+    destination,
+  ], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      CODEX_DMG_DOWNLOAD_ATTEMPTS: "2",
+      CODEX_DMG_RETRY_DELAY_SECONDS: "0",
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.equal(fs.readFileSync(destination, "utf8"), "previous dmg");
+  assert.equal(fs.existsSync(`${destination}.part`), false);
+}));
+
+test("all CI upstream DMG consumers use the non-empty atomic downloader", () => {
+  for (const relativePath of [
+    "container-entrypoint.sh",
+    "update-nix-hashes.sh",
+    "validate-nix-pins.sh",
+  ]) {
+    const source = fs.readFileSync(path.resolve(__dirname, relativePath), "utf8");
+    assert.match(source, /scripts\/ci\/download-upstream-dmg\.sh/);
+    assert.doesNotMatch(source, /curl -fL --retry 3 -o [^\n]*UPSTREAM_DMG/);
+  }
+});
+
+test("Nix pin validation reads the unbundled Parcel watcher version from the app manifest", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "validate-nix-pins.sh"),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /ASAR_EXTRACT_DIR\/package\.json[\s\S]*dependencies\?\.\['@parcel\/watcher'\]/,
+  );
+  assert.doesNotMatch(
+    source,
+    /ASAR_EXTRACT_DIR\/node_modules\/@parcel\/watcher\/package\.json/,
+  );
+});
+
+test("installer reads the unbundled Parcel watcher version from the current app manifest", () => {
+  const source = fs.readFileSync(
+    path.resolve(__dirname, "../lib/native-modules.sh"),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /app\.dependencies\?\.\["@parcel\/watcher"\][\s\S]*app\.optionalDependencies\?\.\["@parcel\/watcher"\]/,
+  );
+  assert.doesNotMatch(
+    source,
+    /require\(path\.join\(appRoot, "node_modules\/@parcel\/watcher\/package\.json"\)\)/,
+  );
 });
 
 test("Nix refresh serializes campaigns and deduplicates refresh and exact-head CI", () => {
@@ -255,6 +407,10 @@ test("Nix hash refresh accepts a validated focused output override", () => {
     "remote-mobile-control",
     "ui-tweaks",
   ]);
+  assert.equal(
+    watchdogProfile.settings["ui-tweaks"].tweaks.modelPicker.showModelsByDefault.enabled,
+    true,
+  );
   assert.match(script, /NIX_VERIFY_OUTPUTS/);
   assert.match(script, /NIX_COMPARE_REF/);
   assert.match(workflow, /\.#checks\.x86_64-linux\.watchdog-linux-features/);
@@ -262,6 +418,22 @@ test("Nix hash refresh accepts a validated focused output override", () => {
   assert.match(refreshWorkflow, /\.#checks\.x86_64-linux\.watchdog-linux-features/);
   assert.match(script, /Invalid Nix verification output/);
   assert.match(script, /run_nix_build "\$VERIFY_LOG" "\$\{PACKAGE_OUTPUTS\[@\]\}"/);
+});
+
+test("Parcel watcher runtime check is built by PR and scheduled current-DMG Nix verification", () => {
+  const selector = ".#checks.x86_64-linux.parcel-watcher-staged-runtime";
+  const sources = [
+    path.resolve(__dirname, "../../.github/workflows/ci.yml"),
+    path.resolve(__dirname, "../../.github/workflows/update-codex-hash.yml"),
+  ];
+
+  for (const sourcePath of sources) {
+    const source = fs.readFileSync(sourcePath, "utf8");
+    assert.ok(
+      source.includes(selector),
+      `${path.relative(path.resolve(__dirname, "../.."), sourcePath)} must build ${selector}`,
+    );
+  }
 });
 
 test("local Node syntax checks parse native .js ESM in module mode", () => {
