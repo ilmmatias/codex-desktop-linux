@@ -103,8 +103,10 @@ const PARCEL_FALLBACK_SYMBOL_KEY =
   "codex-linux.directory-only-working-tree-watch.parcel-fallback";
 const QUALIFICATION_WARNINGS_SYMBOL_KEY =
   "codex-linux.directory-only-working-tree-watch.qualification-warnings";
+const ESTABLISHMENT_LOGGED_SYMBOL_KEY =
+  "codex-linux.directory-only-working-tree-watch.establishment-logged";
 const WATCHBOUND_RESULT_NAME = "codexLinuxWatchboundWatcher";
-const WATCHBOUND_VERSION = "2.1.1";
+const WATCHBOUND_VERSION = "2.1.2";
 const DEFAULT_MAX_WATCHES = 8192;
 const DEFAULT_IGNORED_DIRECTORY_NAMES = [];
 const IDENTIFIER_PATTERN = "[A-Za-z_$][\\w$]*";
@@ -192,12 +194,47 @@ function codexLinuxStartDirectoryOnlyWorkingTreeWatch(
     const RETRY_MAX_MS = 30_000;
     const QUALIFICATION_WARNINGS_SYMBOL_KEY =
       "codex-linux.directory-only-working-tree-watch.qualification-warnings";
-    const WATCHBOUND_VERSION = "2.1.1";
+    const ESTABLISHMENT_LOGGED_SYMBOL_KEY =
+      "codex-linux.directory-only-working-tree-watch.establishment-logged";
+    const WATCHBOUND_VERSION = "2.1.2";
     const moduleOverrideKey = Symbol.for(
       "codex-linux.directory-only-working-tree-watch.test-module",
     );
     const moduleOverride = globalThis[moduleOverrideKey];
-    const watchbound = moduleOverride ?? await import("watchbound");
+    let watchbound = moduleOverride;
+    if (watchbound == null) {
+      try {
+        watchbound = await import("watchbound");
+      } catch (error) {
+        const runtimeRefusalCodes = new Set([
+          "WATCHBOUND_UNSUPPORTED_PLATFORM",
+          "WATCHBOUND_UNSUPPORTED_LIBC",
+          "WATCHBOUND_UNSUPPORTED_KERNEL",
+          "WATCHBOUND_UNSUPPORTED_NODE",
+          "WATCHBOUND_UNSUPPORTED_NODE_API",
+        ]);
+        if (!runtimeRefusalCodes.has(error?.code)) throw error;
+        // A supported loader refusal preserves the upstream route. Missing,
+        // corrupt, or API-incompatible enabled packages are packaging defects
+        // and must remain visible instead of silently selecting Parcel.
+        const warningStateKey = Symbol.for(QUALIFICATION_WARNINGS_SYMBOL_KEY);
+        const warningState = globalThis[warningStateKey] ??= new Set();
+        const fallbackName = typeof fallback === "function"
+          ? "upstream Parcel watcher"
+          : "upstream file watcher";
+        const message = error?.message ?? String(error);
+        const signature = `runtime\0${error.code}\0${message}\0${fallbackName}`;
+        if (!warningState.has(signature)) {
+          if (warningState.size >= 256) warningState.clear();
+          warningState.add(signature);
+          console.warn(
+            `WARN: directory-only working-tree watch runtime rejected Watchbound ` +
+              `${WATCHBOUND_VERSION} (${error.code}: ${message}); using the ${fallbackName}.`,
+          );
+        }
+        return typeof fallback === "function" ? fallback() : null;
+      }
+    }
     if (
       watchbound.capabilities?.schemaVersion !== 9 ||
       watchbound.capabilities?.versions?.wrapper !== WATCHBOUND_VERSION ||
@@ -1346,6 +1383,25 @@ function codexLinuxStartDirectoryOnlyWorkingTreeWatch(
       scheduleRootRecovery();
     }
 
+    const establishmentLoggedKey = Symbol.for(ESTABLISHMENT_LOGGED_SYMBOL_KEY);
+    let establishmentLoggedRoots = globalThis[establishmentLoggedKey];
+    if (!(establishmentLoggedRoots instanceof Set)) {
+      establishmentLoggedRoots = new Set();
+      globalThis[establishmentLoggedKey] = establishmentLoggedRoots;
+    }
+    if (!establishmentLoggedRoots.has(root)) {
+      establishmentLoggedRoots.add(root);
+      const runtime = engine.runtimeStats();
+      const target = typeof qualification?.target?.packagedTargetId === "string"
+        ? qualification.target.packagedTargetId
+        : "unknown";
+      console.info(
+        `INFO: directory-only working-tree watch established with Watchbound ` +
+          `${WATCHBOUND_VERSION} for ${root} ` +
+          `(target=${target}, native=${runtime.nativeWatches}, limit=${requestedLimit}).`,
+      );
+    }
+
     return {
       // Watchbound is recursive for included paths. Reporting partial recursive
       // coverage deliberately preserves Codex's existing focus recovery.
@@ -1642,7 +1698,7 @@ function currentContractReason(records, bundleCount) {
   );
   const branches = relevant.reduce((count, record) => count + record.branchCallCount, 0);
   return (
-    "Current 26.803.41515 working-tree contract rejected: " +
+    "Current 26.814.41957 working-tree contract rejected: " +
     `Found ${relevant.length} current local startFileWatch bundles ` +
     `(${targetNames.join(", ") || "none"}), ${parcelContractCount} Parcel route contracts, ` +
     `and ${workerParcelContractCount} in worker.js across ${bundleCount} build bundles; ` +
@@ -1898,6 +1954,7 @@ const descriptors = [
 module.exports = {
   DEFAULT_IGNORED_DIRECTORY_NAMES,
   DEFAULT_MAX_WATCHES,
+  ESTABLISHMENT_LOGGED_SYMBOL_KEY,
   HELPER_NAME,
   LOCAL_FILE_WATCH_METHOD,
   PARCEL_FALLBACK_SYMBOL_KEY,

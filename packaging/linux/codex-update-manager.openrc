@@ -3,7 +3,7 @@
 name="Codex update manager"
 description="Resident unprivileged updater for Codex Desktop"
 command="/usr/bin/codex-update-manager"
-command_args="daemon "
+command_args="daemon"
 command_background="true"
 pidfile="${XDG_RUNTIME_DIR:-/tmp}/codex-update-manager.pid"
 output_log="${XDG_STATE_HOME:-${HOME}/.local/state}/codex-update-manager/openrc.log"

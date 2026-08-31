@@ -86,12 +86,15 @@ main() {
     stage_optional_update_builder_bundle "$staging_root"
     write_launcher_stub "$staging_root"
     printf '%s\n' "$PACKAGE_VERSION" > "$staging_root/opt/$PACKAGE_NAME/.codex-linux/package-version"
+    stage_linux_feature_package_resources "$staging_root" "gentoo"
     run_linux_feature_package_hooks "$staging_root" "gentoo"
     normalize_package_payload_permissions "$staging_root"
     restore_linux_feature_payload_permissions "$staging_root"
     tar -C "$staging_root" -cf "$package_dir/files/payload.tar" .
 
-    local updater_dependencies postinst_service prerm_service
+    local updater_dependencies postinst_service prerm_service feature_dependencies
+    feature_dependencies="$(linux_feature_package_dependencies gentoo "$staging_root/opt/$PACKAGE_NAME")" || \
+        error "Failed to render Linux feature dependencies for Gentoo"
     if package_with_updater_enabled; then
         updater_dependencies=$'    >=sys-apps/openrc-0.62\n    sys-auth/polkit'
         postinst_service=$'    local helper="${EROOT}opt/__PACKAGE_NAME__/.codex-linux/codex-update-manager-openrc-user-service.sh"\n    if [[ -r ${helper} ]]; then\n        source "${helper}"\n        if [[ -z ${REPLACING_VERSIONS} ]]; then\n            codex_ensure_user_service_running\n        else\n            codex_start_enabled_user_service\n        fi\n    fi'
@@ -100,6 +103,9 @@ main() {
         updater_dependencies=''
         postinst_service=$'    local cleanup="${EROOT}opt/__PACKAGE_NAME__/.codex-linux/codex-no-updater-transition-cleanup.sh"\n    [[ -r ${cleanup} ]] && source "${cleanup}" && codex_no_updater_transition_cleanup'
         prerm_service=''
+    fi
+    if [ -n "$feature_dependencies" ]; then
+        updater_dependencies+=$'\n'"$feature_dependencies"
     fi
 
     awk -v arch="$arch" -v package_name="$PACKAGE_NAME" \

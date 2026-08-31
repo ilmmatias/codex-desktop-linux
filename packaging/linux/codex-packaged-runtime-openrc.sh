@@ -19,7 +19,7 @@ codex_packaged_runtime_prelaunch_background() {
 
 codex_packaged_runtime_trigger_update_check() {
     command -v codex-update-manager >/dev/null 2>&1 || return 0
-    codex-update-manager check-now --if-stale >/dev/null 2>&1 || true
+    codex-update-manager check-now >/dev/null 2>&1 || true
 }
 
 codex_packaged_runtime_export_env() {

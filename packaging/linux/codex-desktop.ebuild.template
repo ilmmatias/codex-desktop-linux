@@ -1,6 +1,6 @@
 EAPI=8
 
-DESCRIPTION="ChatGPT Desktop for Linux, rebuilt from the official macOS application"
+DESCRIPTION="ChatGPT Community for Linux, rebuilt from OpenAI's signed official Linux package"
 HOMEPAGE="https://github.com/ilysenko/codex-desktop-linux"
 SRC_URI=""
 LICENSE="MIT"

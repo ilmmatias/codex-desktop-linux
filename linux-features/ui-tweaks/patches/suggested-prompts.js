@@ -33,7 +33,11 @@ function appPageEligibilityPattern() {
 }
 
 function mainEligibilityPattern() {
-  return /return\{enabled:([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\.account\),staleTimeMs:\1\.([A-Za-z_$][\w$]*)\(\3\.account\)\}/gu;
+  return /let\{ambientSuggestionsFeatureDiscovery:([A-Za-z_$][\w$]*),ambientSuggestionsStaleTimeMs:([A-Za-z_$][\w$]*),computerUse:([A-Za-z_$][\w$]*)\}=([A-Za-z_$][\w$]*)\(\);if\(!([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\|\|\2==null\)return\{enabled:!1\};let\{account:([A-Za-z_$][\w$]*)\}=await ([A-Za-z_$][\w$]*)\.getAccount\(\);return ([A-Za-z_$][\w$]*)\(\7\)\?\{enabled:!0,computerUseAvailable:\3,featureDiscoveryEnabled:\1,staleTimeMs:\2\}:\{enabled:!1\}/gu;
+}
+
+function patchedMainEligibilityPattern() {
+  return /let\{ambientSuggestionsFeatureDiscovery:([A-Za-z_$][\w$]*),ambientSuggestionsStaleTimeMs:([A-Za-z_$][\w$]*),computerUse:([A-Za-z_$][\w$]*)\}=([A-Za-z_$][\w$]*)\(\);if\(!([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*)\)\|\|\2==null\)return\{enabled:!1\};let\{account:([A-Za-z_$][\w$]*)\}=await ([A-Za-z_$][\w$]*)\.getAccount\(\);return\(([A-Za-z_$][\w$]*)\(\7\),function codexLinuxUiTweaksSuggestedPromptsMainEnabled\(\)\{return!0\}\(\)\)\?\{enabled:!0,computerUseAvailable:\3,featureDiscoveryEnabled:\1,staleTimeMs:\2\}:\{enabled:!1\}/gu;
 }
 
 function settingsEligibilityPattern() {
@@ -41,7 +45,11 @@ function settingsEligibilityPattern() {
 }
 
 function homeContentSourcePattern() {
-  return /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)===`curated`(?=,[A-Za-z_$][\w$]*=[A-Za-z_$][\w$]*\([A-Za-z_$][\w$]*\.email\),[A-Za-z_$][\w$]*=[A-Za-z_$][\w$]*\(\{canUsePersonalizedSuggestions:[A-Za-z_$][\w$]*,generatedSuggestionsEnabled:[A-Za-z_$][\w$]*,hasGeneratedSuggestionsReadSettled:[A-Za-z_$][\w$]*,shouldUseCuratedNewChatPageSuggestions:\1\}\))/gu;
+  return /([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)===`curated`(?=,[\s\S]{0,400}?canUsePersonalizedSuggestions:[A-Za-z_$][\w$]*,generatedSuggestionsEnabled:[A-Za-z_$][\w$]*,hasGeneratedSuggestionsReadSettled:[A-Za-z_$][\w$]*,shouldUseCuratedNewChatPageSuggestions:\1\})/gu;
+}
+
+function patchedHomeContentSourcePattern() {
+  return /([A-Za-z_$][\w$]*)=\(([A-Za-z_$][\w$]*)===`curated`,function codexLinuxSuggestedPromptsGeneratedSource\(\)\{return!1\}\(\)\)(?=,[\s\S]{0,400}?canUsePersonalizedSuggestions:[A-Za-z_$][\w$]*,generatedSuggestionsEnabled:[A-Za-z_$][\w$]*,hasGeneratedSuggestionsReadSettled:[A-Za-z_$][\w$]*,shouldUseCuratedNewChatPageSuggestions:\1\})/gu;
 }
 
 function matchCount(source, pattern) {
@@ -96,10 +104,27 @@ function suggestedPromptsHomeContentContract(source) {
   }
   const markerMatches = source.split(HOME_CONTENT_SOURCE_MARKER).length - 1;
   const cleanMatches = matchCount(source, homeContentSourcePattern());
-  if (markerMatches === 0 && cleanMatches === 1) {
+  const patchedMatches = matchCount(source, patchedHomeContentSourcePattern());
+  if (markerMatches === 0 && cleanMatches === 1 && patchedMatches === 0) {
     return "current";
   }
-  if (markerMatches === 1 && cleanMatches === 0) {
+  if (markerMatches === 1 && cleanMatches === 0 && patchedMatches === 1) {
+    return "patched";
+  }
+  return "drifted";
+}
+
+function suggestedPromptsMainContract(source) {
+  if (typeof source !== "string") {
+    return "drifted";
+  }
+  const markerMatches = source.split(MAIN_ELIGIBILITY_MARKER).length - 1;
+  const cleanMatches = matchCount(source, mainEligibilityPattern());
+  const patchedMatches = matchCount(source, patchedMainEligibilityPattern());
+  if (markerMatches === 0 && cleanMatches === 1 && patchedMatches === 0) {
+    return "current";
+  }
+  if (markerMatches === 1 && cleanMatches === 0 && patchedMatches === 1) {
     return "patched";
   }
   return "drifted";
@@ -139,22 +164,30 @@ function applySuggestedPromptsAppPagePatch(source) {
 
 function applySuggestedPromptsMainPatch(source) {
   try {
-    const markerMatches = typeof source === "string"
-      ? source.split(MAIN_ELIGIBILITY_MARKER).length - 1
-      : 0;
-    const cleanMatches = typeof source === "string" ? matchCount(source, mainEligibilityPattern()) : 0;
-    if (markerMatches === 1 && cleanMatches === 0) {
+    const contract = suggestedPromptsMainContract(source);
+    if (contract === "patched") {
       return source;
     }
-    if (markerMatches !== 0 || cleanMatches !== 1) {
+    if (contract !== "current") {
       warn("main process");
       return source;
     }
 
     return source.replace(
       mainEligibilityPattern(),
-      (_match, namespace, enabledMethod, accountName, staleMethod) =>
-        `return{enabled:(${namespace}.${enabledMethod}(${accountName}.account),function ${MAIN_ELIGIBILITY_MARKER}(){return!0}()),staleTimeMs:${namespace}.${staleMethod}(${accountName}.account)}`,
+      (
+        _match,
+        featureDiscoveryName,
+        staleTimeName,
+        computerUseName,
+        featureStateName,
+        settingsEligibilityName,
+        settingsStoreName,
+        accountName,
+        appServerConnectionName,
+        accountEligibilityName,
+      ) =>
+        `let{ambientSuggestionsFeatureDiscovery:${featureDiscoveryName},ambientSuggestionsStaleTimeMs:${staleTimeName},computerUse:${computerUseName}}=${featureStateName}();if(!${settingsEligibilityName}(${settingsStoreName})||${staleTimeName}==null)return{enabled:!1};let{account:${accountName}}=await ${appServerConnectionName}.getAccount();return(${accountEligibilityName}(${accountName}),function ${MAIN_ELIGIBILITY_MARKER}(){return!0}())?{enabled:!0,computerUseAvailable:${computerUseName},featureDiscoveryEnabled:${featureDiscoveryName},staleTimeMs:${staleTimeName}}:{enabled:!1}`,
     );
   } catch (error) {
     console.warn(
