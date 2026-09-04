@@ -18,8 +18,12 @@ assert_executable scripts/ci/validate-nix-pins.sh
 assert_file assets/openai-codex-linux-repository-key.gpg.base64
 assert_file nix/upstream-linux-packages.json
 
-bash -n install.sh launcher/start.sh.template scripts/rebuild-candidate.sh scripts/select-latest-package.sh
-bash -n scripts/lib/*.sh scripts/build-deb.sh scripts/build-rpm.sh scripts/build-pacman.sh scripts/build-gentoo.sh scripts/install-gentoo.sh scripts/build-appimage.sh scripts/user-service.sh
+bash -n install.sh launcher/start.sh.template scripts/install-deps.sh \
+  scripts/rebuild-candidate.sh scripts/select-latest-package.sh \
+  tests/install_deps_pacman_rust_matrix.sh
+bash -n scripts/lib/*.sh scripts/build-deb.sh scripts/build-rpm.sh \
+  scripts/build-pacman.sh scripts/build-gentoo.sh scripts/install-gentoo.sh \
+  scripts/build-appimage.sh scripts/user-service.sh
 
 assert_contains packaging/linux/codex-desktop.desktop '^Name=ChatGPT Community$'
 assert_contains packaging/linux/codex-desktop.desktop '^Comment=Community Linux distribution based on OpenAI ChatGPT$'
