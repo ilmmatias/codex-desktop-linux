@@ -2,7 +2,7 @@
 
 use crate::{
     config::{effective_feature_config_path, RuntimeConfig, RuntimePaths},
-    install::PackageKind,
+    install::{self, PackageKind},
     state::{ArtifactPaths, PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
@@ -109,12 +109,14 @@ pub async fn build_update(
             "packaging/linux/codex-no-updater-openrc-cleanup.sh",
         ),
     };
+    let current_exe = std::env::current_exe()?;
+    let updater_binary = install::resolve_updater_binary_for_build(&current_exe);
     let mut package = Command::new(bundle.join(script));
     package
         .env("PACKAGE_VERSION", package_version())
         .env("APP_DIR_OVERRIDE", &app)
         .env("DIST_DIR_OVERRIDE", &dist)
-        .env("UPDATER_BINARY_SOURCE", std::env::current_exe()?)
+        .env("UPDATER_BINARY_SOURCE", updater_binary)
         .env("PACKAGE_SERVICE_MANAGER", service_manager)
         .env("UPDATER_SERVICE_SOURCE", bundle.join(service_source))
         .env("USER_SERVICE_HELPER_SOURCE", bundle.join(helper_source))
