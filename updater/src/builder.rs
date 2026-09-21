@@ -3,12 +3,21 @@
 use crate::{
     config::{effective_feature_config_path, RuntimeConfig, RuntimePaths},
     install::{self, PackageKind},
+    rollback,
     state::{ArtifactPaths, PersistedState, UpdateStatus},
 };
 use anyhow::{Context, Result};
 use chrono::Utc;
-use std::{fs, path::{Path, PathBuf}};
-use tokio::{fs as async_fs, io::{AsyncBufReadExt, BufReader}, process::Command};
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+};
+use tokio::{
+    fs as async_fs,
+    io::{AsyncBufReadExt, BufReader},
+    process::Command,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuildArtifacts {
@@ -31,11 +40,7 @@ const REQUIRED_BUNDLE_ENTRIES: &[&str] = &[
     "linux-features",
 ];
 
-const OPTIONAL_BUNDLE_ENTRIES: &[&str] = &[
-    "target",
-    "global-dictation-linux",
-    "plugins",
-];
+const OPTIONAL_BUNDLE_ENTRIES: &[&str] = &["target", "global-dictation-linux", "plugins"];
 
 pub async fn build_update(
     config: &RuntimeConfig,
@@ -44,8 +49,12 @@ pub async fn build_update(
     candidate_version: &str,
     upstream_package: &Path,
 ) -> Result<BuildArtifacts> {
-    let workspace = config.workspace_root.join("workspaces").join(safe_component(candidate_version));
+    let workspace = config
+        .workspace_root
+        .join("workspaces")
+        .join(safe_component(candidate_version));
     if workspace.exists() {
+        rollback::preserve_before_workspace_cleanup(state, paths, &workspace)?;
         fs::remove_dir_all(&workspace)?;
     }
     let bundle = workspace.join("builder");
@@ -53,6 +62,7 @@ pub async fn build_update(
     let dist = workspace.join("dist");
     let logs = workspace.join("logs");
     fs::create_dir_all(&logs)?;
+    let temp = prepare_workspace_temp(&workspace)?;
 
     state.status = UpdateStatus::PreparingWorkspace;
     state.artifact_paths.workspace_dir = Some(workspace.clone());
@@ -66,7 +76,11 @@ pub async fn build_update(
         .arg(upstream_package)
         .env("CODEX_INSTALL_TRANSACTION_ACTIVE", "1")
         .env("CODEX_INSTALL_DIR", &app)
-        .env("CODEX_PATCH_REPORT_JSON", workspace.join("reports/patch-report.json"))
+        .env(
+            "CODEX_PATCH_REPORT_JSON",
+            workspace.join("reports/patch-report.json"),
+        )
+        .env("TMPDIR", &temp)
         .current_dir(&bundle);
     if let Some(config_path) = effective_feature_config_path(config) {
         install.env("CODEX_LINUX_FEATURES_CONFIG", config_path);
@@ -121,6 +135,7 @@ pub async fn build_update(
         .env("UPDATER_SERVICE_SOURCE", bundle.join(service_source))
         .env("USER_SERVICE_HELPER_SOURCE", bundle.join(helper_source))
         .env("PACKAGED_RUNTIME_SOURCE", bundle.join(runtime_source))
+        .env("TMPDIR", &temp)
         .current_dir(&bundle);
     if !cleanup_source.is_empty() {
         package.env("NO_UPDATER_CLEANUP_SOURCE", bundle.join(cleanup_source));
@@ -136,10 +151,21 @@ pub async fn build_update(
         upstream_package_path: Some(upstream_package.to_path_buf()),
         workspace_dir: Some(workspace.clone()),
         package_path: Some(package_path.clone()),
+        package_candidate_sha256: state.upstream_package_sha256.clone(),
         rollback_package_path: state.artifact_paths.rollback_package_path.clone(),
     };
     state.save_updater(&paths.state_file)?;
-    Ok(BuildArtifacts { workspace_dir: workspace, package_path })
+    Ok(BuildArtifacts {
+        workspace_dir: workspace,
+        package_path,
+    })
+}
+
+fn prepare_workspace_temp(workspace: &Path) -> Result<PathBuf> {
+    let temp = workspace.join("tmp");
+    fs::create_dir_all(&temp)?;
+    fs::set_permissions(&temp, fs::Permissions::from_mode(0o700))?;
+    Ok(temp)
 }
 
 fn package_version() -> String {
@@ -147,7 +173,16 @@ fn package_version() -> String {
 }
 
 fn safe_component(value: &str) -> String {
-    value.chars().map(|c| if c.is_ascii_alphanumeric() || ".+-_".contains(c) { c } else { '_' }).collect()
+    value
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || ".+-_".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn copy_builder_bundle(source: &Path, destination: &Path) -> Result<()> {
@@ -168,7 +203,11 @@ fn copy_builder_bundle(source: &Path, destination: &Path) -> Result<()> {
 
 fn copy_path(source: &Path, destination: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(source)?;
-    anyhow::ensure!(!metadata.file_type().is_symlink(), "update-builder entry cannot be a symlink: {}", source.display());
+    anyhow::ensure!(
+        !metadata.file_type().is_symlink(),
+        "update-builder entry cannot be a symlink: {}",
+        source.display()
+    );
     if metadata.is_dir() {
         fs::create_dir_all(destination)?;
         for entry in fs::read_dir(source)? {
@@ -176,7 +215,9 @@ fn copy_path(source: &Path, destination: &Path) -> Result<()> {
             copy_path(&entry.path(), &destination.join(entry.file_name()))?;
         }
     } else {
-        if let Some(parent) = destination.parent() { fs::create_dir_all(parent)?; }
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::copy(source, destination)?;
         fs::set_permissions(destination, metadata.permissions())?;
     }
@@ -184,9 +225,15 @@ fn copy_path(source: &Path, destination: &Path) -> Result<()> {
 }
 
 async fn run_logged(command: &mut Command, log_path: &Path) -> Result<()> {
-    if let Some(parent) = log_path.parent() { async_fs::create_dir_all(parent).await?; }
-    command.stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
-    let mut child = command.spawn().context("Failed to start update build command")?;
+    if let Some(parent) = log_path.parent() {
+        async_fs::create_dir_all(parent).await?;
+    }
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command
+        .spawn()
+        .context("Failed to start update build command")?;
     let stdout = child.stdout.take().context("missing stdout")?;
     let stderr = child.stderr.take().context("missing stderr")?;
     let (out, err) = tokio::join!(read_stream(stdout), read_stream(stderr));
@@ -194,7 +241,11 @@ async fn run_logged(command: &mut Command, log_path: &Path) -> Result<()> {
     text.push_str(&err?);
     async_fs::write(log_path, &text).await?;
     let status = child.wait().await?;
-    anyhow::ensure!(status.success(), "update build command failed; see {}", log_path.display());
+    anyhow::ensure!(
+        status.success(),
+        "update build command failed; see {}",
+        log_path.display()
+    );
     Ok(())
 }
 
@@ -225,7 +276,11 @@ fn find_package(dist: &Path) -> Result<PathBuf> {
             matches.push(path);
         }
     }
-    anyhow::ensure!(matches.len() == 1, "expected one rebuilt package, found {}", matches.len());
+    anyhow::ensure!(
+        matches.len() == 1,
+        "expected one rebuilt package, found {}",
+        matches.len()
+    );
     Ok(matches.remove(0))
 }
 
@@ -313,6 +368,22 @@ mod tests {
         assert_eq!(safe_component("26.1/../../x"), "26.1_.._.._x");
     }
 
+    #[test]
+    fn build_temp_directory_is_private_and_workspace_scoped() {
+        let workspace = scratch_dir("workspace-temp");
+        let temp = prepare_workspace_temp(&workspace).expect("workspace temp");
+        assert_eq!(temp, workspace.join("tmp"));
+        assert_eq!(
+            fs::metadata(&temp)
+                .expect("temp metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        fs::remove_dir_all(workspace).expect("cleanup");
+    }
+
     fn scratch_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
             "codex-find-package-{tag}-{}-{}",
@@ -349,13 +420,22 @@ mod tests {
     #[test]
     fn find_package_still_rejects_two_real_packages() {
         let dist = scratch_dir("two-real");
-        fs::write(dist.join("codex-desktop-2026.09.03.120000-1-x86_64.pkg.tar.zst"), b"a")
-            .expect("first package");
-        fs::write(dist.join("codex-desktop-2026.09.03.130000-1-x86_64.pkg.tar.zst"), b"b")
-            .expect("second package");
+        fs::write(
+            dist.join("codex-desktop-2026.09.03.120000-1-x86_64.pkg.tar.zst"),
+            b"a",
+        )
+        .expect("first package");
+        fs::write(
+            dist.join("codex-desktop-2026.09.03.130000-1-x86_64.pkg.tar.zst"),
+            b"b",
+        )
+        .expect("second package");
 
         let error = find_package(&dist).expect_err("ambiguous dist must fail");
-        assert!(error.to_string().contains("found 2"), "unexpected error: {error}");
+        assert!(
+            error.to_string().contains("found 2"),
+            "unexpected error: {error}"
+        );
 
         fs::remove_dir_all(&dist).expect("cleanup");
     }
@@ -390,7 +470,11 @@ mod tests {
         fs::write(&helper, "binary").expect("helper");
         let enabled_destination = root.join("enabled");
         copy_builder_bundle(&source, &enabled_destination).expect("feature bundle copy");
-        assert_eq!(fs::read_to_string(enabled_destination.join("target/release/helper")).expect("copied helper"), "binary");
+        assert_eq!(
+            fs::read_to_string(enabled_destination.join("target/release/helper"))
+                .expect("copied helper"),
+            "binary"
+        );
         fs::remove_dir_all(root).expect("cleanup");
     }
 
